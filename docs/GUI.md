@@ -51,6 +51,11 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
   remotos (`Image.async` + placeholder): escribir filtra las tarjetas
   cargadas, Enter busca online; instalar descarga (vídeo→WE_DIR con
   `project.json`, imagen→`backgrounds-lab`) + refresh a Local.
+* Iconografía: nada de emoji, solo symbolic del tema
+  (`user-trash-symbolic`, `folder-download-symbolic`, `emblem-ok-symbolic`,
+  `view-refresh-symbolic`, `go-down-symbolic`, `emblem-favorite-symbolic`)
+  resueltos con `Quickshell.iconPath(name, true)`. `ShellButton` acepta
+  `icon:` (string) para pintarlos; sin él, texto plano.
 * `remove <id> [--force]`: borra items del store (`motionbgs-*`,
   `bing-*`, `img-*`) con su thumb y título, y refresca. Los wallpapers
   reales del workshop se niegan sin `--force`.

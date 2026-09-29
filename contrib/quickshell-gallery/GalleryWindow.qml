@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Widgets
 import qs.core
 
 pragma ComponentBehavior: Bound
@@ -159,7 +160,8 @@ FloatingWindow {
 
                 ShellButton {
                     visible: root.galleryModel.mode === "explore"
-                    label: "⟳"
+                    label: "Actualizar"
+                    icon: "view-refresh-symbolic"
                     onActivated: root.galleryModel.searchExplore()
                 }
             }
@@ -185,13 +187,14 @@ FloatingWindow {
                 }
 
                 ShellButton {
-                    label: "★ (" + root.galleryModel.typeCount("fav") + ")"
+                    label: "Favoritos (" + root.galleryModel.typeCount("fav") + ")"
+                    icon: "emblem-favorite-symbolic"
                     primary: root.galleryModel.showFavorites
                     onActivated: root.galleryModel.toggleFavorites()
                 }
 
                 ShellButton {
-                    label: root.galleryModel.sortOrder === "" ? "A-Z" : (root.galleryModel.sortOrder === "az" ? "A-Z ↓" : "Z-A ↑")
+                    label: root.galleryModel.sortOrder === "" ? "Ordenar" : (root.galleryModel.sortOrder === "az" ? "A-Z" : "Z-A")
                     primary: root.galleryModel.sortOrder !== ""
                     onActivated: root.galleryModel.toggleSort()
                 }
@@ -366,14 +369,15 @@ FloatingWindow {
                             font.bold: true
                         }
 
-                        UiText {
+                        IconImage {
                             anchors.top: parent.top
                             anchors.right: parent.right
                             anchors.margins: 6
+                            width: 20
+                            height: 20
                             visible: root.galleryModel.mode === "local" && (modelData.type || "") !== "image"
-                            text: modelData.favorite ? "★" : "☆"
-                            color: modelData.favorite ? Theme.accent : Theme.menuMutedText
-                            font.pixelSize: 20
+                            source: Quickshell.iconPath(modelData.favorite ? "emblem-favorite-symbolic" : "non-starred-symbolic", true)
+                            opacity: modelData.favorite ? 1.0 : 0.55
 
                             MouseArea {
                                 anchors.fill: parent
@@ -418,14 +422,15 @@ FloatingWindow {
                         enabled: root.galleryModel.downloadingRef === ""
                         label: {
                             if (root.galleryModel.downloadingRef === modelData.ref) {
-                                return "Instalando…";
+                                return "Instalando";
                             }
                             if (root.galleryModel.installedLocalId(modelData.ref) !== "") {
-                                return "✓ Instalado";
+                                return "Instalado";
                             }
-                            return "⬇ Instalar";
+                            return "Instalar";
                         }
                         primary: root.galleryModel.installedLocalId(modelData.ref) !== ""
+                        icon: root.galleryModel.installedLocalId(modelData.ref) !== "" ? "emblem-ok-symbolic" : "folder-download-symbolic"
                         onActivated: root.galleryModel.installOrApply(modelData)
                     }
                 }
@@ -444,7 +449,7 @@ FloatingWindow {
 
                 UiText {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Buscando online…"
+                    text: "Buscando online..."
                 }
             }
 
@@ -468,7 +473,7 @@ FloatingWindow {
             UiText {
                 Layout.alignment: Qt.AlignHCenter
                 visible: root.galleryModel.mode === "explore" && !root.galleryModel.exploreLoading && root.galleryModel.exploreError === "" && root.galleryModel.exploreItems.length === 0
-                text: "Elige fuente, escribe o pulsa ⟳"
+                text: "Elige fuente, escribe y pulsa Enter"
                 color: Theme.menuMutedText
             }
 
@@ -490,7 +495,8 @@ FloatingWindow {
                     }
                     return true;
                 }
-                label: "Cargar más ↓"
+                label: "Cargar más"
+                icon: "go-down-symbolic"
                 onActivated: {
                     if (root.galleryModel.exploreSource === "bing") {
                         const q = root.galleryModel.exploreQuery;
@@ -540,7 +546,9 @@ FloatingWindow {
                         }
 
                         ShellButton {
-                            label: "🗑 Borrar"
+                            label: "Borrar"
+                            icon: "user-trash-symbolic"
+                            danger: true
                             visible: root.galleryModel.isStoreItem(root.galleryModel.selectedId)
                             onActivated: {
                                 const sel = root.galleryModel.selectedItem();
