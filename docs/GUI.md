@@ -37,8 +37,15 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
   La galería indexa `id+title+description+tags` y filtra por categorías
   (anime/nature/sci-fi/cyberpunk/gaming/minimalist) vía chips.
 * `catalog bing|wallhaven [query]` + `catalog-get <ref> [id]`
-  (motionbgs sin API pública: pendiente): pestaña Explorar con thumbs
-  remotos; click descarga (vídeo→WE_DIR, imagen→backgrounds-lab).
+  (motionbgs sin API pública: pendiente; wallhaven sin key = últimos
+  públicos). Pestaña Explorar con thumbs remotos (`Image.async` +
+  placeholder): escribir filtra las tarjetas cargadas, Enter busca
+  online; click selecciona y `⬇ Instalar` descarga (vídeo→WE_DIR con
+  `project.json`, imagen→`backgrounds-lab`) + refresh a Local.
+* Tipo `image` (`img-<stem>`): las estáticas de `backgrounds-lab` salen
+  en Local con chip `image`, thumb directo y sin estrella/props;
+  `apply-id img-*` para el engine y pone `feh --bg-fill` (restore y
+  switch lo respetan vía `apply_id`).
 
 ## Rofi portable (cualquier X11)
 

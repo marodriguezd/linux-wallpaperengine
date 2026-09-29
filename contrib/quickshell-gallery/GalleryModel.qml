@@ -20,6 +20,8 @@ Scope {
     property var exploreItems: []
     property string exploreSource: "bing"
     property string exploreQuery: ""
+    property var exploreSelected: null
+    property string status: ""
     property string selectedId: ""
     property var props: []
     property var pendingEdits: ({})
@@ -94,8 +96,41 @@ Scope {
     }
 
     function explore() : void {
+        root.exploreSelected = null;
+        root.status = "buscando online...";
         exploreProcess.command = ["we-wallpaper", "catalog", root.exploreSource, root.exploreQuery];
         exploreProcess.running = true;
+    }
+
+    function filteredExplore() : var {
+        const q = root.exploreQuery.toLowerCase();
+        if (q === "") {
+            return root.exploreItems;
+        }
+
+        const out = [];
+
+        for (let i = 0; i < root.exploreItems.length; i++) {
+            const item = root.exploreItems[i];
+            const hay = ((item.ref || "") + "\n" + (item.title || "")).toLowerCase();
+
+            if (hay.indexOf(q) !== -1) {
+                out.push(item);
+            }
+        }
+
+        return out;
+    }
+
+    function selectExplore(item : var) : void {
+        root.exploreSelected = item;
+        root.status = (item && item.title) ? item.title : "";
+    }
+
+    function installSelected() : void {
+        if (root.exploreSelected) {
+            download(root.exploreSelected);
+        }
     }
 
     function download(item : var) : void {
@@ -157,8 +192,24 @@ Scope {
 
         root.selectedId = item.id;
         root.pendingEdits = ({});
+
+        if ((item.type || "") === "image") {
+            root.props = [];
+            return;
+        }
+
         loadPropsProcess.command = ["we-wallpaper", "props", item.id];
         loadPropsProcess.running = true;
+    }
+
+    function selectedItem() : var {
+        for (let i = 0; i < root.items.length; i++) {
+            if (root.items[i] && root.items[i].id === root.selectedId) {
+                return root.items[i];
+            }
+        }
+
+        return null;
     }
 
     function editProp(name : string, value : string) : void {

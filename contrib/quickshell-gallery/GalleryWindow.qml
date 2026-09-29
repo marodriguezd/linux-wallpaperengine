@@ -111,11 +111,58 @@ FloatingWindow {
                 Layout.fillWidth: true
                 spacing: 8
 
+                ShellButton {
+                    label: "Local"
+                    primary: root.galleryModel.mode === "local"
+                    onActivated: root.galleryModel.setMode("local")
+                }
+
+                ShellButton {
+                    label: "Explorar"
+                    primary: root.galleryModel.mode === "explore"
+                    onActivated: {
+                        root.galleryModel.setMode("explore");
+                        root.galleryModel.explore();
+                    }
+                }
+
+                Repeater {
+                    model: [
+                        { id: "bing", label: "bing" },
+                        { id: "wallhaven", label: "wallhaven" }
+                    ]
+
+                    delegate: ShellButton {
+                        required property var modelData
+                        visible: root.galleryModel.mode === "explore"
+                        label: modelData.label
+                        primary: root.galleryModel.exploreSource === modelData.id
+                        onActivated: {
+                            root.galleryModel.exploreSource = modelData.id;
+                            root.galleryModel.explore();
+                        }
+                    }
+                }
+
+                ShellButton {
+                    visible: root.galleryModel.mode === "explore"
+                    enabled: root.galleryModel.exploreSelected !== null
+                    label: "⬇ Instalar"
+                    primary: true
+                    onActivated: root.galleryModel.installSelected()
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
                 Repeater {
                     model: [
                         { id: "", label: "all" },
                         { id: "scene", label: "scene" },
                         { id: "video", label: "video" },
+                        { id: "image", label: "image" },
                         { id: "web", label: "web" }
                     ]
 
@@ -163,7 +210,7 @@ FloatingWindow {
                 clip: true
                 cellWidth: 200
                 cellHeight: 160
-                model: root.galleryModel.mode === "explore" ? root.galleryModel.exploreItems : root.galleryModel.filteredItems()
+                model: root.galleryModel.mode === "explore" ? root.galleryModel.filteredExplore() : root.galleryModel.filteredItems()
 
                 delegate: Column {
                     required property var modelData
@@ -180,7 +227,13 @@ FloatingWindow {
 
                         Image {
                             anchors.fill: parent
-                            source: (modelData.thumb || "") !== "" ? "file://" + modelData.thumb : ""
+                            source: {
+                                const t = modelData.thumb || "";
+                                if (t === "") {
+                                    return "";
+                                }
+                                return (t.indexOf("http://") === 0 || t.indexOf("https://") === 0) ? t : "file://" + t;
+                            }
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             cache: true
@@ -198,7 +251,7 @@ FloatingWindow {
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
                                 if (root.galleryModel.mode === "explore") {
-                                    root.galleryModel.download(modelData);
+                                    root.galleryModel.selectExplore(modelData);
                                 } else {
                                     root.galleryModel.apply(modelData);
                                 }
@@ -209,7 +262,7 @@ FloatingWindow {
                             anchors.top: parent.top
                             anchors.right: parent.right
                             anchors.margins: 6
-                            visible: root.galleryModel.mode === "local"
+                            visible: root.galleryModel.mode === "local" && (modelData.type || "") !== "image"
                             text: modelData.favorite ? "★" : "☆"
                             color: modelData.favorite ? Theme.accent : Theme.menuMutedText
                             font.pixelSize: 20
@@ -251,44 +304,6 @@ FloatingWindow {
                     anchors.fill: parent
                     anchors.margins: 10
                     spacing: 6
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                ShellButton {
-                    label: "Local"
-                    primary: root.galleryModel.mode === "local"
-                    onActivated: root.galleryModel.setMode("local")
-                }
-
-                ShellButton {
-                    label: "Explorar"
-                    primary: root.galleryModel.mode === "explore"
-                    onActivated: {
-                        root.galleryModel.setMode("explore");
-                        root.galleryModel.explore();
-                    }
-                }
-
-                Repeater {
-                    model: [
-                        { id: "bing", label: "bing" },
-                        { id: "wallhaven", label: "wallhaven" }
-                    ]
-
-                    delegate: ShellButton {
-                        required property var modelData
-                        visible: root.galleryModel.mode === "explore"
-                        label: modelData.label
-                        primary: root.galleryModel.exploreSource === modelData.id
-                        onActivated: {
-                            root.galleryModel.exploreSource = modelData.id;
-                            root.galleryModel.explore();
-                        }
-                    }
-                }
-            }
 
             RowLayout {
                 Layout.fillWidth: true
@@ -367,7 +382,13 @@ FloatingWindow {
 
                             UiText {
                                 visible: root.galleryModel.props.length === 0
-                                text: "No properties (video) or failed to read"
+                                text: {
+                                    const sel = root.galleryModel.selectedItem();
+                                    if (sel && (sel.type || "") === "image") {
+                                        return "Imagen estática: se aplica con feh (sin motor)";
+                                    }
+                                    return "No properties (video) or failed to read";
+                                }
                             }
                         }
                     }

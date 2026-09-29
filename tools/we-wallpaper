@@ -462,7 +462,7 @@ restore_wallpaper() {
     if [ "$apply_type" = "all" ]; then
 	apply_all "$id" "$mode"
     else
-	apply_wallpaper "$id" "$mode" "$screen"
+	apply_id "$id" "$mode"
     fi
 }
 
@@ -565,7 +565,7 @@ for it in json.load(open('$CACHE_FILE'))['items']:
     fi
     [ -z "$line" ] && return 1
     local id=$(echo "$line" | awk '{print $1}')
-    apply_wallpaper "$id" "$mode" "$(get_primary_screen)"
+    apply_id "$id" "$mode"
 }
 
 # Fase GUI-3: grid rofi con thumbs para cualquier X11.
@@ -794,6 +794,9 @@ PROPS_DIR="$HOME/.config/we-wallpaper/props"
 props() {
     local id="$1"; shift
     [ -n "$id" ] || { echo "Uso: we-wallpaper props <id> [name=value ...]"; return 1; }
+    case "$id" in
+	img-*) return 0 ;;  # imágenes estáticas: sin propiedades
+    esac
     [ -d "$WE_DIR/$id" ] || { echo "Wallpaper '$id' no encontrado"; return 1; }
     local saved="$PROPS_DIR/$id.conf"
     if [ $# -eq 0 ]; then
@@ -898,15 +901,51 @@ for it in cache.get('items', []):
         'path': it.get('path', ''),
         'thumb': tp,
     })
+lab = os.path.join(os.path.expanduser('~'), 'Pictures', 'backgrounds-lab')
+if os.path.isdir(lab):
+    for f in sorted(os.listdir(lab)):
+        if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')):
+            stem = os.path.splitext(f)[0]
+            fp = os.path.join(lab, f)
+            items.append({
+                'id': 'img-' + stem,
+                'title': stem,
+                'type': 'image',
+                'valid': True,
+                'favorite': False,
+                'description': 'static image (feh)',
+                'tags': ['static'],
+                'path': fp,
+                'thumb': fp,
+            })
 json.dump({'version': 1, 'items': items}, open(os.environ['OUT'], 'w'), indent=1, ensure_ascii=False)
 print('gallery: %d items -> %s' % (len(items), os.environ['OUT']))
 "
 }
 
+# Store: imágenes estáticas (bing/wallhaven) via feh. El engine se para.
+apply_image() {
+    local id="${1:-}" screen="${2:-$(get_primary_screen)}"
+    local stem="${id#img-}" lab="$HOME/Pictures/backgrounds-lab" file=""
+    local e
+    for e in jpg jpeg png webp bmp JPG JPEG PNG WEBP; do
+	[ -f "$lab/$stem.$e" ] && file="$lab/$stem.$e" && break
+    done
+    [ -n "$file" ] || { echo "Imagen '$id' no encontrada en backgrounds-lab"; return 1; }
+    killall "$ENGINE" 2>/dev/null
+    feh --bg-fill "$file" 2>/dev/null || { echo "feh falló"; return 1; }
+    echo "Imagen $id en $screen (feh estático)"
+    save_state "$id" "lite" "$screen" "image"
+    apply_theme "$file"
+}
+
 # Fase GUI-1: alias fino para clicks (modo via $2 o WE_MODE).
 apply_id() {
     [ -n "${1:-}" ] || { echo "Uso: we-wallpaper apply-id <id> [modo]"; return 1; }
-    apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)"
+    case "$1" in
+	img-*) apply_image "$1" "$(get_primary_screen)" ;;
+	*) apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)" ;;
+    esac
 }
 
 # Fase GUI-super: validación fuerte de vídeo (códec + dimensiones reales).
