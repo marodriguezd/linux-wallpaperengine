@@ -410,12 +410,7 @@ FloatingWindow {
 
                     RowLayout {
                         spacing: 6
-                        visible: root.galleryModel.mode === "local" && root.galleryModel.isStoreItem(modelData.id)
-
-                        ShellButton {
-                            label: "🗑"
-                            onActivated: root.galleryModel.remove(modelData)
-                        }
+                        visible: false
                     }
 
                     ShellButton {
@@ -530,7 +525,13 @@ FloatingWindow {
                 spacing: 8
 
                         UiText {
-                            text: "Properties: " + root.galleryModel.selectedId
+                            text: {
+                                const sel = root.galleryModel.selectedItem();
+                                if (sel && (sel.type || "") === "image") {
+                                    return "Properties: " + root.galleryModel.selectedId + " (imagen estática: sin propiedades)";
+                                }
+                                return "Properties: " + root.galleryModel.selectedId;
+                            }
                             font.bold: true
                         }
 
@@ -539,7 +540,20 @@ FloatingWindow {
                         }
 
                         ShellButton {
+                            label: "🗑 Borrar"
+                            visible: root.galleryModel.isStoreItem(root.galleryModel.selectedId)
+                            onActivated: {
+                                const sel = root.galleryModel.selectedItem();
+
+                                if (sel) {
+                                    root.galleryModel.remove(sel);
+                                }
+                            }
+                        }
+
+                        ShellButton {
                             label: "Save"
+                            visible: root.galleryModel.props.length > 0
                             onActivated: root.galleryModel.saveProps()
                         }
 
@@ -548,6 +562,13 @@ FloatingWindow {
                             primary: true
                             onActivated: root.galleryModel.applySelected()
                         }
+                    }
+
+                    UiText {
+                        Layout.fillWidth: true
+                        visible: root.galleryModel.props.length > 0
+                        color: Theme.menuMutedText
+                        text: "Save = guarda estos valores para siempre (los usa al aplicar). Apply = lo pone en pantalla ahora."
                     }
 
                     Flickable {
@@ -607,7 +628,7 @@ FloatingWindow {
                                     if (sel && (sel.type || "") === "image") {
                                         return "Imagen estática: se aplica con feh (sin motor)";
                                     }
-                                    return "No properties (video) or failed to read";
+                                    return "Este vídeo no tiene propiedades editables: se aplica con los valores por defecto del motor. Apply lo reinicia.";
                                 }
                             }
                         }
