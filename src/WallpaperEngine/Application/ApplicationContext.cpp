@@ -782,6 +782,11 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.flag ()
 	.store_into (this->settings.library.refresh);
 
+    libraryGroup.add_argument ("--fav")
+	.help ("Toggles the favorite flag of a background id (no renderer started)")
+	.default_value ("")
+	.store_into (this->settings.library.favId);
+
     auto& configurationGroup = program.add_group ("Wallpaper configuration options");
 
     configurationGroup.add_argument ("--disable-particles")
@@ -954,7 +959,8 @@ int ApplicationContext::effectiveMaximumFPS () const {
 }
 
 bool ApplicationContext::wantsLibrary () const {
-    return this->settings.library.list || !this->settings.library.search.empty ();
+    return this->settings.library.list || !this->settings.library.search.empty ()
+	|| !this->settings.library.favId.empty ();
 }
 
 std::filesystem::path ApplicationContext::translateBackground (const std::string& bgIdOrPath) {

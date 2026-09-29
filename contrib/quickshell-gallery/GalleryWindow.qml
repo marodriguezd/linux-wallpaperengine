@@ -67,17 +67,27 @@ FloatingWindow {
                     font.pixelSize: Theme.inputFontSize
                     clip: true
 
-                    onTextChanged: root.galleryModel.query = text
+                    onTextChanged: {
+                        if (root.galleryModel.mode === "explore") {
+                            root.galleryModel.exploreQuery = text;
+                        } else {
+                            root.galleryModel.query = text;
+                        }
+                    }
 
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_Escape) {
                             root.galleryModel.close();
                             event.accepted = true;
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                            const items = root.galleryModel.filteredItems();
+                            if (root.galleryModel.mode === "explore") {
+                                root.galleryModel.explore();
+                            } else {
+                                const items = root.galleryModel.filteredItems();
 
-                            if (items.length > 0) {
-                                root.galleryModel.apply(items[0]);
+                                if (items.length > 0) {
+                                    root.galleryModel.apply(items[0]);
+                                }
                             }
 
                             event.accepted = true;
@@ -116,6 +126,33 @@ FloatingWindow {
                         onActivated: root.galleryModel.setTypeFilter(modelData.id)
                     }
                 }
+
+                ShellButton {
+                    label: "★ favs"
+                    primary: root.galleryModel.showFavorites
+                    onActivated: root.galleryModel.toggleFavorites()
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: root.galleryModel.categories.length > 0
+
+                UiText {
+                    text: "mood:"
+                }
+
+                Repeater {
+                    model: root.galleryModel.categories
+
+                    delegate: ShellButton {
+                        required property string modelData
+                        label: modelData
+                        primary: root.galleryModel.categoryFilter === modelData
+                        onActivated: root.galleryModel.setCategoryFilter(modelData)
+                    }
+                }
             }
 
             GridView {
@@ -126,7 +163,7 @@ FloatingWindow {
                 clip: true
                 cellWidth: 200
                 cellHeight: 160
-                model: root.galleryModel.filteredItems()
+                model: root.galleryModel.mode === "explore" ? root.galleryModel.exploreItems : root.galleryModel.filteredItems()
 
                 delegate: Column {
                     required property var modelData
@@ -159,7 +196,33 @@ FloatingWindow {
                         MouseArea {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: root.galleryModel.apply(modelData)
+                            onClicked: {
+                                if (root.galleryModel.mode === "explore") {
+                                    root.galleryModel.download(modelData);
+                                } else {
+                                    root.galleryModel.apply(modelData);
+                                }
+                            }
+                        }
+
+                        UiText {
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            anchors.margins: 6
+                            visible: root.galleryModel.mode === "local"
+                            text: modelData.favorite ? "★" : "☆"
+                            color: modelData.favorite ? Theme.accent : Theme.menuMutedText
+                            font.pixelSize: 20
+
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -8
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: mouse => {
+                                    mouse.accepted = true;
+                                    root.galleryModel.toggleFavorite(modelData);
+                                }
+                            }
                         }
                     }
 
@@ -180,7 +243,7 @@ FloatingWindow {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 200
-                visible: root.galleryModel.selectedId !== ""
+                visible: root.galleryModel.mode === "local" && root.galleryModel.selectedId !== ""
                 color: Theme.controlNormalFill
                 radius: 8
 
@@ -189,9 +252,47 @@ FloatingWindow {
                     anchors.margins: 10
                     spacing: 6
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                ShellButton {
+                    label: "Local"
+                    primary: root.galleryModel.mode === "local"
+                    onActivated: root.galleryModel.setMode("local")
+                }
+
+                ShellButton {
+                    label: "Explorar"
+                    primary: root.galleryModel.mode === "explore"
+                    onActivated: {
+                        root.galleryModel.setMode("explore");
+                        root.galleryModel.explore();
+                    }
+                }
+
+                Repeater {
+                    model: [
+                        { id: "bing", label: "bing" },
+                        { id: "wallhaven", label: "wallhaven" }
+                    ]
+
+                    delegate: ShellButton {
+                        required property var modelData
+                        visible: root.galleryModel.mode === "explore"
+                        label: modelData.label
+                        primary: root.galleryModel.exploreSource === modelData.id
+                        onActivated: {
+                            root.galleryModel.exploreSource = modelData.id;
+                            root.galleryModel.explore();
+                        }
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
 
                         UiText {
                             text: "Properties: " + root.galleryModel.selectedId

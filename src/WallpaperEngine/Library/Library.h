@@ -28,6 +28,8 @@ struct LibraryItem {
     std::vector<std::string> tags;
     /** False when project.json is missing required type/file info */
     bool valid = false;
+    /** User favorite (sidecar file, survives rescans) */
+    bool favorite = false;
     /** project.json mtime, used for cache invalidation */
     std::int64_t mtime = 0;
 };
@@ -38,6 +40,8 @@ public:
     static std::filesystem::path cachePath ();
     /** ~/.cache/linux-wallpaperengine/thumbs (created on demand) */
     static std::filesystem::path thumbsDir ();
+    /** ~/.config/we-wallpaper/favorites.json (XDG_CONFIG_HOME aware) */
+    static std::filesystem::path favoritesPath ();
 
     /** Loads cache into items. False when missing, unreadable or stale version. */
     bool load ();
@@ -49,6 +53,13 @@ public:
     std::size_t scan ();
     /** Writes current items to the cache file. False on IO error. */
     bool save () const;
+
+    /**
+     * Flips the favorite flag of an item: updates the sidecar file and,
+     * when the item is loaded, the in-memory entry too.
+     * @return new state, std::nullopt when the id is unknown
+     */
+    std::optional<bool> toggleFavorite (const std::string& id);
 
     /**
      * Case-insensitive substring match over id/title/description/tags.

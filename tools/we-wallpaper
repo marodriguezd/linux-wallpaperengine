@@ -694,6 +694,98 @@ status() {
     fi
 }
 
+# Fase GUI-super: catálogos web estilo Aura (solo APIs oficiales JSON).
+# TSV: ref|title|thumb|file|kind  (ref = fuente:id, listo para catalog-get)
+catalog() {
+    local src="${1:-}" query="${2:-}"
+    case "$src" in
+	bing)
+	    curl -fsSL -m 25 "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8" 2>/dev/null \
+		| python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit('bing: respuesta inválida')
+for img in data.get('images', []):
+    base = 'https://www.bing.com' + img.get('urlbase', '')
+    title = (img.get('copyright', '') or 'bing').split(' (')[0][:80]
+    print('bing:%s|%s|%s_480x270.jpg|%s_1920x1080.jpg|image' % (
+        img.get('startdate', ''), title.replace('|', '/'), base, base))
+"
+	    ;;
+	wallhaven)
+	    local key_args=() key=""
+	    [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/keys.conf" ] \
+		&& key=$(grep -E "^wallhaven=" "${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/keys.conf" 2>/dev/null | cut -d= -f2)
+	    [ -z "$key" ] && key="${WALLHAVEN_KEY:-}"
+	    [ -n "$key" ] && key_args=(-H "Authorization: $key")
+	    local q="${query:-nature}"
+	    curl -fsSL -m 25 -G "https://wallhaven.cc/api/v1/search" \
+		--data-urlencode "q=$q" --data-urlencode "purity=100" \
+		--data-urlencode "sorting=toplist" "${key_args[@]}" 2>/dev/null \
+		| python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit('wallhaven: respuesta inválida (¿API key?)')
+for w in data.get('data', [])[:24]:
+    title = ('%s %s' % (w.get('category', ''), w.get('resolution', ''))).strip() or w.get('id', '')
+    print('wallhaven:%s|%s|%s|%s|image' % (
+        w.get('id', ''), title.replace('|', '/'),
+        w.get('thumbs', {}).get('small', ''), w.get('url', '')))
+"
+	    ;;
+	motionbgs)
+	    echo "motionbgs: sin API pública (el site no expone JSON); pendiente"
+	    echo "mientras tanto: busca el mp4 y usa 'we-wallpaper fetch <url>'"
+	    return 1
+	    ;;
+	*)
+	    echo "Uso: we-wallpaper catalog <bing|wallhaven|motionbgs> [query]"
+	    return 1
+	    ;;
+    esac
+}
+
+# catalog-get <ref> [id]: resuelve la ref a URL directa y reutiliza fetch.
+catalog_get() {
+    local ref="${1:-}" id="${2:-}"
+    [ -n "$ref" ] || { echo "Uso: we-wallpaper catalog-get <ref> [id]"; return 1; }
+    local src="${ref%%:*}" key="${ref#*:}"
+    case "$src" in
+	bing)
+	    local url="https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8"
+	    local file
+	    file=$(curl -fsSL -m 25 "$url" 2>/dev/null | python3 -c "
+import json, sys
+for img in json.load(sys.stdin).get('images', []):
+    if img.get('startdate', '') == '$key':
+        print('https://www.bing.com' + img.get('urlbase', '') + '_1920x1080.jpg')
+        break
+")
+	    [ -n "$file" ] || { echo "No encontrado en Bing de hoy: $key"; return 1; }
+	    fetch_url "$file" "$id"
+	    ;;
+	wallhaven)
+	    local detail
+	    detail=$(curl -fsSL -m 25 "https://wallhaven.cc/api/v1/w/$key" 2>/dev/null \
+		| python3 -c "
+import json, sys
+d = json.load(sys.stdin).get('data', {})
+print(d.get('path', ''))
+" 2>/dev/null)
+	    [ -n "$detail" ] || { echo "Wallhaven sin file directo: $key"; return 1; }
+	    fetch_url "$detail" "$id"
+	    ;;
+	*)
+	    echo "Ref desconocida: $ref (bing:FECHA | wallhaven:ID)"
+	    return 1
+	    ;;
+    esac
+}
+
 PROPS_DIR="$HOME/.config/we-wallpaper/props"
 
 # Fase GUI-2: props <id> [name=value ...]. Sin args lista propiedades
@@ -800,6 +892,10 @@ for it in cache.get('items', []):
         'title': it.get('title') or tid,
         'type': it.get('type', 'unknown'),
         'valid': bool(it.get('valid', True)),
+        'favorite': bool(it.get('favorite', False)),
+        'description': it.get('description', ''),
+        'tags': it.get('tags', []),
+        'path': it.get('path', ''),
         'thumb': tp,
     })
 json.dump({'version': 1, 'items': items}, open(os.environ['OUT'], 'w'), indent=1, ensure_ascii=False)
@@ -811,6 +907,91 @@ print('gallery: %d items -> %s' % (len(items), os.environ['OUT']))
 apply_id() {
     [ -n "${1:-}" ] || { echo "Uso: we-wallpaper apply-id <id> [modo]"; return 1; }
     apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)"
+}
+
+# Fase GUI-super: validación fuerte de vídeo (códec + dimensiones reales).
+# Sin ffprobe no se puede validar y se acepta (avisa por stderr).
+validate_video() {
+    local f="$1"
+    command -v ffprobe >/dev/null 2>&1 || { echo "sin ffprobe: sin validar" >&2; return 0; }
+    local info
+    info=$(ffprobe -v error -select_streams v:0 \
+	-show_entries stream=codec_name,width,height -of csv=p=0 "$f" 2>/dev/null | head -n 1)
+    [ -z "$info" ] && return 1
+    echo "$info" | grep -qE "^[a-z0-9_]+,[0-9]+,[0-9]+$" || return 1
+    return 0
+}
+
+# Registra un fichero de vídeo ya presente en $dir como wallpaper:
+# project.json + refresh de caché. Devuelve 1 y limpia si no valida.
+register_video_file() {
+    local dir="$1" id="$2" file="$3" desc="$4"
+    if ! validate_video "$dir/$file"; then
+	rm -rf "$dir"; echo "No es un video válido"; return 1
+    fi
+    ID="$id" FILE="$file" DESC="$desc" DIR="$dir" python3 -c "
+import json, os
+json.dump({
+    'title': os.environ['ID'],
+    'type': 'video',
+    'file': os.environ['FILE'],
+    'description': os.environ.get('DESC', ''),
+}, open(os.path.join(os.environ['DIR'], 'project.json'), 'w'), indent=1)
+print()
+"
+    echo "Video listo: $id"
+    if engine_supports_library; then
+	"$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
+	echo "Caché actualizada"
+    fi
+}
+
+# Fase GUI-super: import <video-local> [id] [--title "..."].
+# Copia a WE_DIR como ciudadano de primera (igual que fetch).
+import_video() {
+    local src="$1"; shift
+    local want_id="${1:-}"; [[ "${want_id:-}" == --* ]] && want_id=""
+    local title=""
+    while [ $# -gt 0 ]; do
+	case "$1" in
+	    --title) title="${2:-}"; shift 2 ;;
+	    --*) echo "Opción desconocida: $1"; return 1 ;;
+	    *) shift ;;
+	esac
+    done
+    [ -n "$src" ] || { echo "Uso: we-wallpaper import <video-local> [id] [--title ...]"; return 1; }
+    [ -f "$src" ] || { echo "No existe: $src"; return 1; }
+    local base=$(basename "$src")
+    local ext=$(echo "${base##*.}" | tr '[:upper:]' '[:lower:]')
+    case "$ext" in
+	mp4|webm|m4v|mov) ;;
+	*) echo "Extensión no soportada: .$ext (mp4/webm/m4v/mov)"; return 1 ;;
+    esac
+    local id="$want_id"
+    [ -z "$id" ] && id=$(echo "${base%.*}" | tr -c '[:alnum:]_-' '_' | sed 's/__*/_/g; s/^_//; s/_$//')
+    [ -z "$id" ] && id="import-$(date +%s)"
+    [ -n "$title" ] || title="$id"
+    local dir="$WE_DIR/$id"
+    [ -e "$dir" ] && { echo "Ya existe: $id (usa otro id)"; return 1; }
+    mkdir -p "$dir" || return 1
+    cp -- "$src" "$dir/$base" || { rm -rf "$dir"; echo "Copia fallida"; return 1; }
+    # project.json con título custom si se pidió
+    ID="$id" FILE="$base" DESC="imported $base" DIR="$dir" TITLE="$title" python3 -c "
+import json, os
+json.dump({
+    'title': os.environ.get('TITLE') or os.environ['ID'],
+    'type': 'video',
+    'file': os.environ['FILE'],
+    'description': os.environ.get('DESC', ''),
+}, open(os.path.join(os.environ['DIR'], 'project.json'), 'w'), indent=1)
+print()
+" || { rm -rf "$dir"; return 1; }
+    validate_video "$dir/$base" || { rm -rf "$dir"; echo "No es un video válido"; return 1; }
+    echo "Video listo: $id"
+    if engine_supports_library; then
+	"$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
+	echo "Caché actualizada"
+    fi
 }
 
 # Fase MPRIS-plan: fetch <url> [id]. Video (mp4/webm/mov/m4v) -> carpeta
@@ -827,6 +1008,13 @@ fetch_url() {
     fi
 
     local base=$(basename "${url%%\?*}")
+
+    # URLs estilo Bing (/th?id=NOMBRE.EXT&...): el basename del path no sirve
+    if [[ "$base" != *.* ]]; then
+	base=$(echo "$url" | grep -oE '[?&]id=[^&]*' | head -n 1 | cut -d= -f2)
+	[ -z "$base" ] && base="download"
+    fi
+
     local ext=$(echo "${base##*.}" | tr '[:upper:]' '[:lower:]')
     local id="$want_id"
     [ -z "$id" ] && id=$(echo "${base%.*}" | tr -c '[:alnum:]_-' '_' | sed 's/__*/_/g; s/^_//; s/_$//')
@@ -841,20 +1029,7 @@ fetch_url() {
 	    if ! $downloader "$dir/$file" "$url"; then
 		rm -rf "$dir"; echo "Descarga fallida"; return 1
 	    fi
-	    if command -v ffprobe >/dev/null 2>&1 \
-		&& ! ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$dir/$file" 2>/dev/null | grep -q .; then
-		rm -rf "$dir"; echo "No es un video válido"; return 1
-	    fi
-	    python3 -c "
-import json
-json.dump({'title':'$id','type':'video','file':'$file','description':'fetched $url'}, open('$dir/project.json','w'), indent=1)
-print()
-"
-	    echo "Video listo: $id"
-	    if engine_supports_library; then
-		"$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
-		echo "Caché actualizada"
-	    fi
+	    register_video_file "$dir" "$id" "$file" "fetched $url" || return 1
 	    ;;
 	jpg|jpeg|png|webp|bmp)
 	    local lab="$HOME/Pictures/backgrounds-lab"
@@ -877,11 +1052,16 @@ usage() {
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
     echo ""
     echo "  list                                  Listar wallpapers (caché Fase 2)"
+    echo "  fav <id>                              Toggle favorito"
+    echo "  tags <id> [tag ...]                   Ver/editar tags del project.json"
     echo "  props <id> [k=v ...]                  Ver/guardar propiedades por fondo"
     echo "  props-clear <id>                      Borrar overrides guardados"
     echo "  gallery-json                          Volcar JSON para galería quickshell"
     echo "  apply-id <id> [modo]                  Aplicar por id (para clicks)"
     echo "  fetch <url> [id]                      Descargar video/imagen web"
+    echo "  catalog <src> [query]               Explorar bing|wallhaven|motionbgs"
+    echo "  catalog-get <ref> [id]              Descargar ref (usa fetch)"
+    echo "  import <fich> [id] [--title ..]       Importar vídeo local a WE_DIR"
     echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
     echo "  grid [modo]                           Grid rofi con thumbs (cae a switch)"
     echo "  refresh                               Reescanear workshop a la caché"
@@ -906,11 +1086,61 @@ usage() {
 
 case "${1:-}" in
     list)       list_wallpapers ;;
+    fav)
+	[ -n "${2:-}" ] || { echo "Uso: we-wallpaper fav <id>"; exit 1; }
+	if engine_supports_library && [ -z "${WE_NO_FORK:-}" ]; then
+	    "$ENGINE" --fav "$2"
+	else
+	    # fallback sin engine fork: sidecar directo
+	    FAV_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/favorites.json"
+	    ID="$2" FAV_FILE="$FAV_FILE" python3 -c "
+import json, os
+fp = os.environ['FAV_FILE']
+fav = set()
+if os.path.isfile(fp):
+    try:
+        fav = set(json.load(open(fp)).get('favorites', []))
+    except Exception:
+        pass
+iid = os.environ['ID']
+if iid in fav:
+    fav.discard(iid); print(iid + ': unfavorited')
+else:
+    fav.add(iid); print(iid + ': favorited')
+os.makedirs(os.path.dirname(fp), exist_ok=True)
+json.dump({'favorites': sorted(fav)}, open(fp, 'w'))
+"
+	fi
+	;;
+    tags)
+	[ -n "${2:-}" ] || { echo "Uso: we-wallpaper tags <id> [tag ...]"; exit 1; }
+	[ -d "$WE_DIR/$2" ] || { echo "Wallpaper '$2' no encontrado"; exit 1; }
+	had_tags=""
+	[ -n "${3:-}" ] && had_tags=1
+	PJ="$WE_DIR/$2/project.json" python3 - "$2" "$@" <<'EOF'
+import json, os, sys
+# argv: [- , id, <cmd args...>] -> tags reales desde argv[4:]
+pj = os.environ['PJ']
+iid, newtags = sys.argv[1], sys.argv[4:]
+d = json.load(open(pj))
+if not newtags:
+    print(' '.join(d.get('tags', [])) or '(sin tags)')
+else:
+    d['tags'] = newtags
+    json.dump(d, open(pj, 'w'), indent=1, ensure_ascii=False)
+    print(iid + ': tags = ' + ' '.join(newtags))
+EOF
+	[ -n "$had_tags" ] && engine_supports_library \
+	    && "$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
+	;;
     props)      props "$2" "${@:3}" ;;
     props-clear) props_clear "$2" ;;
     gallery-json) gallery_json ;;
     apply-id)   apply_id "$2" "$3" ;;
     fetch)      fetch_url "$2" "$3" ;;
+    catalog)    catalog "$2" "$3" ;;
+    catalog-get) catalog_get "$2" "$3" ;;
+    import)     import_video "$2" "$3" "$4" "$5" ;;
     switch)     switch_wallpaper "$2" ;;
     grid)       grid "$2" ;;
     refresh)    refresh_library ;;

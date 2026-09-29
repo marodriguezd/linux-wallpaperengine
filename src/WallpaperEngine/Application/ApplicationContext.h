@@ -221,6 +221,8 @@ public:
 	    bool asJson;
 	    /** Force a workshop rescan before listing or searching */
 	    bool refresh;
+	    /** Toggle favorite for this id (library mode without renderer) */
+	    std::string favId;
 	} library;
     } settings = {
         .general = {
@@ -285,6 +287,7 @@ public:
             .typeFilter = "",
             .asJson = false,
             .refresh = false,
+            .favId = "",
         },
     };
 

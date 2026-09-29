@@ -11,14 +11,41 @@ Scope {
     id: root
 
     property bool visible: false
+    property string mode: "local"
     property string query: ""
     property string typeFilter: ""
+    property string categoryFilter: ""
+    property bool showFavorites: false
     property var items: []
-    property string status: ""
+    property var exploreItems: []
+    property string exploreSource: "bing"
+    property string exploreQuery: ""
     property string selectedId: ""
     property var props: []
     property var pendingEdits: ({})
     property string libraryPath: (Quickshell.env("HOME") || "") + "/.config/dwm-titus/gallery-library.json"
+
+    readonly property var categories: ["anime", "nature", "sci-fi", "cyberpunk", "gaming", "minimalist"]
+
+    function categoryOf(item) : string {
+        if (!item) {
+            return "";
+        }
+
+        const tags = item.tags || [];
+
+        for (let i = 0; i < tags.length; i++) {
+            const tag = String(tags[i]).toLowerCase();
+
+            for (let c = 0; c < categories.length; c++) {
+                if (tag.indexOf(categories[c]) !== -1 || categories[c].indexOf(tag) !== -1) {
+                    return categories[c];
+                }
+            }
+        }
+
+        return "";
+    }
 
     function filteredItems() : var {
         const out = [];
@@ -31,12 +58,25 @@ Scope {
                 continue;
             }
 
+            if (root.showFavorites && !item.favorite) {
+                continue;
+            }
+
             if (root.typeFilter !== "" && (item.type || "") !== root.typeFilter) {
                 continue;
             }
 
+            if (root.categoryFilter !== "" && root.categoryOf(item) !== root.categoryFilter) {
+                continue;
+            }
+
             if (q !== "") {
-                const hay = ((item.id || "") + "\n" + (item.title || "")).toLowerCase();
+                let hay = ((item.id || "") + "\n" + (item.title || "") + "\n" + (item.description || "")).toLowerCase();
+                const tags = item.tags || [];
+
+                for (let t = 0; t < tags.length; t++) {
+                    hay += "\n" + String(tags[t]).toLowerCase();
+                }
 
                 if (hay.indexOf(q) === -1) {
                     continue;
@@ -47,6 +87,24 @@ Scope {
         }
 
         return out;
+    }
+
+    function setMode(m : string) : void {
+        root.mode = m;
+    }
+
+    function explore() : void {
+        exploreProcess.command = ["we-wallpaper", "catalog", root.exploreSource, root.exploreQuery];
+        exploreProcess.running = true;
+    }
+
+    function download(item : var) : void {
+        if (!item || !item.ref) {
+            return;
+        }
+
+        downloadProcess.command = ["we-wallpaper", "catalog-get", item.ref];
+        downloadProcess.running = true;
     }
 
     function open() : void {
@@ -63,6 +121,23 @@ Scope {
 
     function setTypeFilter(type : string) : void {
         root.typeFilter = (root.typeFilter === type) ? "" : type;
+    }
+
+    function setCategoryFilter(cat : string) : void {
+        root.categoryFilter = (root.categoryFilter === cat) ? "" : cat;
+    }
+
+    function toggleFavorites() : void {
+        root.showFavorites = !root.showFavorites;
+    }
+
+    function toggleFavorite(item : var) : void {
+        if (!item || !item.id) {
+            return;
+        }
+
+        favProcess.command = ["we-wallpaper", "fav", item.id];
+        favProcess.running = true;
     }
 
     function apply(item : var) : void {
@@ -209,6 +284,61 @@ Scope {
             onStreamFinished: {
                 root.status = this.text;
                 libraryFile.reload();
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: favProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                refreshProcess.running = true;
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: exploreProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const rows = [];
+                const lines = this.text.split("\n");
+
+                for (let i = 0; i < lines.length; i++) {
+                    const cols = lines[i].split("|");
+
+                    if (cols.length < 5 || cols[0] === "") {
+                        continue;
+                    }
+
+                    rows.push({
+                        ref: cols[0],
+                        title: cols[1],
+                        thumb: cols[2],
+                        file: cols[3],
+                        kind: cols[4]
+                    });
+                }
+
+                root.exploreItems = rows;
+                root.status = rows.length + " online";
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: downloadProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                refreshProcess.running = true;
             }
         }
         stderr: StdioCollector {}

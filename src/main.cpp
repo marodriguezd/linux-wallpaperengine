@@ -53,6 +53,21 @@ int runLibraryMode (WallpaperEngine::Application::ApplicationContext& appContext
 	}
     }
 
+    if (!librarySettings.favId.empty ()) {
+	const auto toggled = library.toggleFavorite (librarySettings.favId);
+
+	if (!toggled.has_value ()) {
+	    sLog.error ("Unknown background id: ", librarySettings.favId);
+	    return 1;
+	}
+
+	if (library.save ()) {
+	    std::cout << librarySettings.favId << ": " << (*toggled ? "favorited" : "unfavorited") << std::endl;
+	}
+
+	return 0;
+    }
+
     std::vector<WallpaperEngine::Library::LibraryItem> results;
 
     if (librarySettings.search.empty () && librarySettings.typeFilter.empty ()) {

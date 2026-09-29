@@ -25,6 +25,21 @@ Módulo en `~/.config/quickshell/gallery/` (nunca en managed):
 Fuente de datos: `we-wallpaper gallery-json` → `{version, items[]}`
 con `thumb` = `thumbs/<id>.png` o preview del workshop.
 
+## Importar, favoritos, categorías y catálogos
+
+* `import <vídeo> [id] [--title]`: copia a `WE_DIR` con validación
+  fuerte `ffprobe` (códec + dimensiones); `Library::valid` exige que
+  el fichero exista (fantasmas marcados inválidos).
+* `fav <id>`: toggle con sidecar `~/.config/we-wallpaper/favorites.json`
+  (sobrevive rescans) + `--fav` en el engine; estrella en cada card +
+  chip `★ favs` en la galería.
+* `tags <id> [tag...]`: edita tags del `project.json` (+ refresh).
+  La galería indexa `id+title+description+tags` y filtra por categorías
+  (anime/nature/sci-fi/cyberpunk/gaming/minimalist) vía chips.
+* `catalog bing|wallhaven [query]` + `catalog-get <ref> [id]`
+  (motionbgs sin API pública: pendiente): pestaña Explorar con thumbs
+  remotos; click descarga (vídeo→WE_DIR, imagen→backgrounds-lab).
+
 ## Rofi portable (cualquier X11)
 
 `we-wallpaper grid [modo]`: líneas `id [tipo] título` con
