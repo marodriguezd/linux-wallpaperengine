@@ -20,6 +20,7 @@ Scope {
     property var exploreItems: []
     property string exploreSource: "bing"
     property string exploreQuery: ""
+    property string exploreFilter: ""
     property var exploreSelected: null
     property string status: ""
     property string currentId: ""
@@ -163,16 +164,28 @@ Scope {
     }
 
     function searchExplore() : void {
+        root.exploreQuery = root.exploreFilter;
+        root.exploreFilter = "";
+        refreshExplore();
+    }
+
+    function refreshExplore() : void {
         root.explorePage = 1;
         root.exploreItems = [];
         explore();
     }
 
+    function setMotionTag(t : string) : void {
+        root.exploreQuery = t;
+        root.exploreFilter = "";
+        refreshExplore();
+    }
+
     function setSource(s : string) : void {
         root.exploreSource = s;
-        root.explorePage = 1;
-        root.exploreItems = [];
-        explore();
+        root.exploreQuery = "";
+        root.exploreFilter = "";
+        refreshExplore();
     }
 
     function setWallhavenSort(s : string) : void {
@@ -181,7 +194,8 @@ Scope {
         });
         parts.unshift("sort:" + s);
         root.exploreQuery = parts.join(" ");
-        searchExplore();
+        root.exploreFilter = "";
+        refreshExplore();
     }
 
     function wallhavenSort() : string {
@@ -234,7 +248,7 @@ Scope {
     }
 
     function filteredExplore() : var {
-        const q = root.exploreQuery.toLowerCase();
+        const q = root.exploreFilter.toLowerCase();
         if (q === "") {
             return root.exploreItems;
         }

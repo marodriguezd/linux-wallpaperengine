@@ -76,14 +76,14 @@ FloatingWindow {
                     color: Theme.controlFocusText
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.accentText
-                    text: root.galleryModel.mode === "explore" ? root.galleryModel.exploreQuery : root.galleryModel.query
+                    text: root.galleryModel.mode === "explore" ? root.galleryModel.exploreFilter : root.galleryModel.query
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.inputFontSize
                     clip: true
 
                     onTextChanged: {
                         if (root.galleryModel.mode === "explore") {
-                            root.galleryModel.exploreQuery = text;
+                            root.galleryModel.exploreFilter = text;
                         } else {
                             root.galleryModel.query = text;
                         }
@@ -236,10 +236,7 @@ FloatingWindow {
                         required property var modelData
                         label: modelData.label
                         primary: root.galleryModel.exploreQuery === modelData.id
-                        onActivated: {
-                            root.galleryModel.exploreQuery = modelData.id;
-                            root.galleryModel.searchExplore();
-                        }
+                        onActivated: root.galleryModel.setMotionTag(modelData.id)
                     }
                 }
 
@@ -287,7 +284,8 @@ FloatingWindow {
                     primary: root.galleryModel.exploreQuery !== "archive" && root.galleryModel.exploreQuery.indexOf("archive") !== 0
                     onActivated: {
                         root.galleryModel.exploreQuery = "";
-                        root.galleryModel.searchExplore();
+                        root.galleryModel.exploreFilter = "";
+                        root.galleryModel.refreshExplore();
                     }
                 }
 
@@ -296,7 +294,8 @@ FloatingWindow {
                     primary: root.galleryModel.exploreQuery === "archive" || root.galleryModel.exploreQuery.indexOf("archive") === 0
                     onActivated: {
                         root.galleryModel.exploreQuery = "archive";
-                        root.galleryModel.searchExplore();
+                        root.galleryModel.exploreFilter = "";
+                        root.galleryModel.refreshExplore();
                     }
                 }
             }
@@ -428,7 +427,7 @@ FloatingWindow {
 
                 UiText {
                     anchors.centerIn: parent
-                    visible: galleryGrid.count === 0
+                    visible: root.galleryModel.mode === "local" && galleryGrid.count === 0
                     text: "No wallpapers: run we-wallpaper refresh + gallery-json"
                 }
             }
@@ -494,6 +493,7 @@ FloatingWindow {
                             const m = q.match(/archive(\d+)/);
                             const n = m ? parseInt(m[1], 10) + 1 : 2;
                             root.galleryModel.exploreQuery = "archive" + n;
+                            root.galleryModel.exploreFilter = "";
                             root.galleryModel.explore();
                         }
                         return;

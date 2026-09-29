@@ -854,7 +854,7 @@ if n == 0:
 		    -o "$cf.tmp" 2>/dev/null && mv "$cf.tmp" "$cf" || rm -f "$cf.tmp"
 	    fi
 	    [ -f "$cf" ] || { echo "minimal: sin catálogo (¿red?)"; return 1; }
-	    MB_Q="$query" MB_CF="$cf" MB_LIMIT="${MB_LIMIT:-24}" python3 -c "
+	    MB_Q="$query" MB_CF="$cf" MB_LIMIT="$((page * 24))" python3 -c "
 import json, os, sys, urllib.parse
 q = os.environ.get('MB_Q', '').strip().lower()
 limit = max(int(os.environ.get('MB_LIMIT', '24') or 24), 1)
