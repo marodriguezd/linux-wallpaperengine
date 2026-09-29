@@ -6,7 +6,7 @@ Todo parametrizable por entorno (con default sensato):
 
 | Var | Default | Efecto |
 | --- | ------- | ------ |
-| `WE_DIR` / `WE_ASSETS_DIR` / `WE_ENGINE` | rutas Steam + `linux-wallpaperengine` en `PATH` | layouts `~/.steam`, flatpak, `/opt/fork` |
+| `WE_DIR` / `WE_ASSETS_DIR` / `WE_ENGINE` | rutas Steam + auto: `/opt/fork` si existe, si no `PATH` | layouts `~/.steam`, flatpak, evita builds rancios en `PATH` (p.ej. `/usr/local/bin` que crashea dejando el thumb estático) |
 | `WE_BACKEND` | auto (`swaymsg`→`xrandr`) | fuerza `sway`/`x11`, avisa si es inválido |
 | `WE_MODE` | `lite` en `switch` | modo del apply |
 | `WE_CURSOR_THEME` / `WE_CURSOR_SIZE` | heredar entorno | antes `Banana:30` fijo; en dwm-titus hereda `cat_cursors:32` |

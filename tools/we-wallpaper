@@ -10,7 +10,16 @@
 
 WE_DIR="${WE_DIR:-$HOME/.local/share/Steam/steamapps/workshop/content/431960}"
 ASSETS_DIR="${WE_ASSETS_DIR:-$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets}"
-ENGINE="${WE_ENGINE:-linux-wallpaperengine}"
+# Auto-preferencia: el fork antes que el PATH. /usr/local/bin puede contener
+# builds rancios que crashean al arrancar (malloc assertion) dejando el thumb
+# feh estático; /opt/fork es el build verificado del fork.
+if [ -n "${WE_ENGINE:-}" ]; then
+    ENGINE="$WE_ENGINE"
+elif [ -x /opt/fork/linux-wallpaperengine ]; then
+    ENGINE=/opt/fork/linux-wallpaperengine
+else
+    ENGINE=linux-wallpaperengine
+fi
 # Cursor: se hereda del entorno salvo override (antes Banana:30 fijo).
 # En dwm-titus el vivo es cat_cursors:32 vía theme-env.sh, así que heredar
 # respeta tu tema en cualquier X11.
