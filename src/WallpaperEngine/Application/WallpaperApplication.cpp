@@ -30,7 +30,10 @@
 #include <stb_image_write.h>
 #include <thread>
 
-#define FULLSCREEN_CHECK_WAIT_TIME 250
+// Microseconds between fullscreen/battery re-checks while paused.
+// Short enough to resume promptly, long enough to idle near 0% CPU during
+// hours-long battery pauses (250 used to spin XQueryTree at 4kHz: ~25% CPU).
+#define FULLSCREEN_CHECK_WAIT_TIME 200000
 
 float g_Time;
 float g_TimeLast;

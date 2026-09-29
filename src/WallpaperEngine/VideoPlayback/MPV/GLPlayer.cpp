@@ -223,6 +223,13 @@ void GLPlayer::init () {
     mpv_set_option_string (this->m_handle, "vo", "libmpv");
     mpv_set_option_string (this->m_handle, "profile", "fast");
     mpv_set_option_string (this->m_handle, "untimed", this->m_untimed ? "yes" : "no");
+    // hwdec as an option (not only property): restricts decoder autoselection
+    // from the start, before any CUDA/Vulkan probe can run. On NVIDIA GL even
+    // hwdec=vaapi-copy set post-init still probed nvdec and segfaulted in
+    // libcuda (cuMemFreeAsync from ff_nvdec_decode_init).
+    mpv_set_option_string (
+	this->m_handle, "hwdec", this->getContext ().getApp ().getContext ().settings.video.hwdec.c_str ()
+    );
 
     if (mpv_initialize (this->m_handle) < 0) {
 	sLog.exception ("Could not initialize mpv context");

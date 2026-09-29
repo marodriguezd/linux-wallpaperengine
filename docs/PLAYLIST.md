@@ -40,6 +40,9 @@ Cambiar de video a video con `hwdec auto` puede segfaultear dentro de
 `cuMemFreeAsync` desde `ff_nvdec_decode_init`). No es bug del fork
 (el timer de 60 min de upstream lo sufriría igual).
 
-Fix: `--hwdec` (`auto|vaapi|nvdec|cuda|...`, default `auto`) que se pasa
-tal cual a mpv. En esta RTX 3050 `--hwdec vaapi` (el que ya usaba por
-fallback) hace next/prev estables. Helper: `WE_HWDEC=vaapi`.
+Fix: `--hwdec` (`auto|vaapi-copy|nvdec|cuda|...`, default `auto`) que se pasa
+tal cual a mpv como opción pre-init y propiedad. En esta RTX 3050
+`--hwdec vaapi-copy` (el que ya usaba por fallback) hace next/prev
+estables. Ojo: `--hwdec vaapi` a secas cae a software (110% CPU);
+`vaapi-copy` es el bueno en Intel. Helper: `WE_HWDEC=vaapi-copy`.
+Ver `docs/BATTERY.md` para números y límites de dGPU.
