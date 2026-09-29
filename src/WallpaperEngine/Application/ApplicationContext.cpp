@@ -648,9 +648,8 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    "On NVIDIA, video-to-video playlist switches can segfault inside libcuda "
 	    "while probing backends; --hwdec vaapi pins the working backend"
 	)
-	.choices ("auto", "auto-safe", "auto-copy", "no", "vaapi", "vdpau", "nvdec", "cuda", "vulkan")
-	.default_value (std::string ("auto"))
-	.store_into (this->settings.video.hwdec);
+	.choices ("auto", "auto-safe", "auto-copy", "no", "vaapi", "vaapi-copy", "vdpau", "nvdec", "cuda", "vulkan")
+	.action ([this] (const std::string& value) -> void { this->settings.video.hwdec = value; });
 
     performanceGroup.add_argument ("--profile")
 	.help (

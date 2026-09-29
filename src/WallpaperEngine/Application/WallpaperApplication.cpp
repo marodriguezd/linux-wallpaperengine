@@ -836,6 +836,31 @@ void WallpaperApplication::setup () {
     this->prepareOutputs ();
     this->setupOpenGLDebugging ();
 
+    // MPRIS player: metadata + next/prev/quit. Never fatal: without a
+    // session bus the engine simply has no player interface.
+    try {
+	Media::MPRISServer::Callbacks callbacks;
+	callbacks.next = [this] { this->requestPlaylistSkip (1); };
+	callbacks.previous = [this] { this->requestPlaylistSkip (-1); };
+	callbacks.quit = [this] { this->m_context.state.general.keepRunning = false; };
+	callbacks.title = [this] { return this->currentTitle (); };
+	callbacks.paused = [this] { return this->m_isPaused; };
+	callbacks.canSkip = [this] {
+	    for (const auto& [screen, playlist] : this->m_activePlaylists) {
+		if (playlist.definition.items.size () > 1) {
+		    return true;
+		}
+	    }
+
+	    return false;
+	};
+
+	this->m_mpris = std::make_unique<Media::MPRISServer> (std::move (callbacks));
+    } catch (const std::exception& e) {
+	sLog.error ("MPRIS unavailable, continuing without player interface: ", e.what ());
+	this->m_mpris = nullptr;
+    }
+
     if (this->m_context.settings.general.dumpStructure) {
 	auto prettyPrinter = Data::Dumpers::StringPrinter ();
 
@@ -863,6 +888,11 @@ void WallpaperApplication::setup () {
 void WallpaperApplication::render () {
     static time_t seconds;
     static struct tm* timeinfo;
+
+    // MPRIS pump (non-blocking) + change notifications, also while paused
+    if (this->m_mpris != nullptr) {
+	this->m_mpris->dispatch ();
+    }
 
     if (this->m_isPaused) {
 	usleep (FULLSCREEN_CHECK_WAIT_TIME);
@@ -1025,6 +1055,35 @@ bool WallpaperApplication::refreshBatteryState () {
     this->m_context.state.render.batteryActive = onBattery;
 
     return this->m_context.settings.render.batteryMaximumFPS == 0 && onBattery;
+}
+
+std::string WallpaperApplication::currentTitle () const {
+    const auto& backgrounds = this->m_context.settings.general.screenBackgrounds;
+
+    std::filesystem::path current;
+
+    if (!backgrounds.empty ()) {
+	current = backgrounds.begin ()->second;
+    } else if (!this->m_context.settings.general.defaultBackground.empty ()) {
+	current = this->m_context.settings.general.defaultBackground;
+    }
+
+    if (current.empty ()) {
+	return "";
+    }
+
+    // workshop layout <...>/431960/<id>/file.ext -> report the id
+    const auto parent = current.parent_path ().filename ().string ();
+
+    if (!parent.empty () && parent != "/" && parent != "." && current.has_parent_path ()) {
+	const auto grandparent = current.parent_path ().parent_path ().filename ().string ();
+
+	if (grandparent == "431960") {
+	    return parent;
+	}
+    }
+
+    return current.filename ().string ();
 }
 
 void WallpaperApplication::requestPlaylistSkip (int direction) {

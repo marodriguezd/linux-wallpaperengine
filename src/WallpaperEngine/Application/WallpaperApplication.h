@@ -19,6 +19,8 @@
 #include "WallpaperEngine/WebBrowser/WebBrowserContext.h"
 
 #include "WallpaperEngine/Data/Model/Types.h"
+#include "WallpaperEngine/Media/DBusMediaSource.h"
+#include "WallpaperEngine/Media/MPRISServer.h"
 #include "WallpaperEngine/Media/MediaSource.h"
 #include "WallpaperEngine/System/BatteryState.h"
 
@@ -168,6 +170,11 @@ private:
      * @return true if rendering must pause for battery (batteryMaximumFPS == 0 while on battery)
      */
     bool refreshBatteryState ();
+    /**
+     * Current wallpaper title for MPRIS metadata: parent directory name when
+     * under workshop (an id like desktophut-sanyo), file name otherwise.
+     */
+    [[nodiscard]] std::string currentTitle () const;
     void advancePlaylist (
 	const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now,
 	int direction = 1
@@ -196,6 +203,8 @@ private:
     std::mt19937 m_playlistRng { std::random_device {}() };
     /** Pending playlist skips from SIGUSR1 (+1) / SIGUSR2 (-1), consumed in render() */
     std::atomic<int> m_playlistSkip { 0 };
+    /** MPRIS player (metadata + next/prev/quit), null when the session bus is unavailable */
+    std::unique_ptr<Media::MPRISServer> m_mpris = nullptr;
     bool m_isPaused = false;
     /** Pause was triggered by a fullscreen window (resume when none remains) */
     bool m_pausedForFullscreen = false;

@@ -358,6 +358,8 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Media/MediaSource.cpp
     src/WallpaperEngine/Media/DBusMediaSource.h
     src/WallpaperEngine/Media/DBusMediaSource.cpp
+    src/WallpaperEngine/Media/MPRISServer.h
+    src/WallpaperEngine/Media/MPRISServer.cpp
 
     src/WallpaperEngine/Library/Library.h
     src/WallpaperEngine/Library/Library.cpp
