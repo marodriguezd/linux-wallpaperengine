@@ -302,6 +302,30 @@ ApplicationContext::PlaylistDefinition ApplicationContext::playlistFromFile (con
 		} else {
 		    sLog.error ("Ignoring invalid order header in ", path, ": ", headerValue);
 		}
+	    } else if (key == "fps") {
+		try {
+		    const int fps = std::stoi (headerValue);
+
+		    if (fps >= 1 && fps <= 240) {
+			definition.settings.fpsCap = fps;
+		    } else {
+			sLog.error ("Ignoring out of range fps header in ", path, ": ", headerValue);
+		    }
+		} catch (const std::exception&) {
+		    sLog.error ("Ignoring invalid fps header in ", path, ": ", headerValue);
+		}
+	    } else if (key == "volume") {
+		try {
+		    const int volume = std::stoi (headerValue);
+
+		    if (volume >= 0 && volume <= 128) {
+			definition.settings.volumeOverride = volume;
+		    } else {
+			sLog.error ("Ignoring out of range volume header in ", path, ": ", headerValue);
+		    }
+		} catch (const std::exception&) {
+		    sLog.error ("Ignoring invalid volume header in ", path, ": ", headerValue);
+		}
 	    }
 
 	    continue;
@@ -642,6 +666,11 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.flag ()
 	.action ([this] (const std::string& value) -> void { this->settings.render.batteryMaximumFPS = 0; });
 
+    performanceGroup.add_argument ("--idle-pause")
+	.help ("X11 only: pause rendering after N minutes without input (MIT-SCREEN-SAVER), 0 disables it")
+	.default_value (uint32_t (0))
+	.store_into (this->settings.render.idlePauseMinutes);
+
     performanceGroup.add_argument ("--hwdec")
 	.help (
 	    "mpv hardware decoding backend for video wallpapers (default auto). "
@@ -864,6 +893,9 @@ void ApplicationContext::loadSettingsFromArgv () {
 	if (this->settings.render.batteryMaximumFPS > 240) {
 	    this->settings.render.batteryMaximumFPS = 240;
 	}
+	if (this->settings.render.idlePauseMinutes > 1440) {
+	    this->settings.render.idlePauseMinutes = 1440;
+	}
 	this->settings.screenshot.delay
 	    = std::max<uint32_t> (0, std::min<uint32_t> (this->settings.screenshot.delay, 600));
 
@@ -908,11 +940,17 @@ int ApplicationContext::getArgc () const { return this->m_argc; }
 char** ApplicationContext::getArgv () const { return this->m_argv; }
 
 int ApplicationContext::effectiveMaximumFPS () const {
+    int cap = this->settings.render.maximumFPS;
+
     if (this->state.render.batteryActive && this->settings.render.batteryMaximumFPS > 0) {
-	return std::min (this->settings.render.maximumFPS, this->settings.render.batteryMaximumFPS);
+	cap = std::min (cap, this->settings.render.batteryMaximumFPS);
     }
 
-    return this->settings.render.maximumFPS;
+    if (this->state.render.playlistFps > 0) {
+	cap = std::min (cap, this->state.render.playlistFps);
+    }
+
+    return std::max (1, cap);
 }
 
 bool ApplicationContext::wantsLibrary () const {

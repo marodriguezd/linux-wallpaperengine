@@ -9,6 +9,7 @@
 
 #include "WallpaperEngine/Render/CWallpaper.h"
 #include "WallpaperEngine/Render/Drivers/Detectors/FullScreenDetector.h"
+#include "WallpaperEngine/Render/Drivers/Detectors/X11IdleDetector.h"
 #include "WallpaperEngine/Render/Drivers/GLFWOpenGLDriver.h"
 #include "WallpaperEngine/Render/Drivers/Output/GLFWWindowOutput.h"
 #include "WallpaperEngine/Render/RenderContext.h"
@@ -171,6 +172,16 @@ private:
      */
     bool refreshBatteryState ();
     /**
+     * Idle pause check (MIT-SCREEN-SAVER, 5s cache). False when disabled.
+     * @return true if rendering must pause for input idleness
+     */
+    bool idlePauseActive ();
+    /**
+     * Applies per-playlist overrides (fps cap, volume) from the active
+     * playlists into render/audio state. Logs only on change.
+     */
+    void applyPlaylistOverrides ();
+    /**
      * Current wallpaper title for MPRIS metadata: parent directory name when
      * under workshop (an id like desktophut-sanyo), file name otherwise.
      */
@@ -210,7 +221,13 @@ private:
     bool m_pausedForFullscreen = false;
     /** Pause was triggered by battery mode (resume when back on AC) */
     bool m_pausedForBattery = false;
+    /** Pause was triggered by input idleness (resume on next input) */
+    bool m_pausedForIdle = false;
     System::BatteryState m_battery;
+    /** X11 idle detector, created on first use when --idle-pause is set */
+    std::unique_ptr<Render::Drivers::Detectors::X11IdleDetector> m_idleDetector = nullptr;
+    std::chrono::steady_clock::time_point m_lastIdleCheck {};
+    bool m_idleCache = false;
     bool m_screenShotTaken = false;
     uint32_t m_nextFrameScreenshot = 0;
     std::chrono::steady_clock::time_point m_pauseStart {};

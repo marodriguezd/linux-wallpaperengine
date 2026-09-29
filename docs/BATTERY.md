@@ -43,4 +43,7 @@ WE_PROFILE=lite WE_FPS_BATTERY=10 WE_HWDEC=vaapi-copy we-wallpaper apply <id> li
 ```
 
 Y para duración máxima: `WE_PAUSE_ON_BATTERY=1` (o `--pause-on-battery`).
+En X11 además: `--idle-pause N` pausa tras N minutos sin input
+(MIT-SCREEN-SAVER vía dlopen, sin deps nuevas de build; verificado
+pausa+resume con `xdotool`). Reanuda solo al detectar input.
 Medición: `/tmp/opencode/batt/measure.sh` (no forma parte del repo).

@@ -12,7 +12,9 @@ desktophut-sanyo
 ```
 
 Una id o ruta por línea, `#` comentarios. `delay` en minutos (default 60),
-`order` sequential|random (default sequential). Flag engine espejo:
+`order` sequential|random (default sequential), `fps` cap 1..240 mientras
+la playlist está activa, `volume` 0..128 mientras está activa
+(verificado en log: `Playlist fps cap: 5`, `Playlist volume: 42`).
 `--playlist-file` (misma semántica de posición que `--playlist`:
 tras `--screen-root` va a esa pantalla, si no al modo ventana).
 El estado guarda el fichero y `restore` lo re-ejecuta como playlist.

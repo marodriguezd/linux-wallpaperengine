@@ -58,6 +58,10 @@ public:
 	std::string order = "sequential";
 	bool updateOnPause = false;
 	bool videoSequence = false;
+	/** Fork: FPS cap while this playlist is active (-1 = no cap) */
+	int fpsCap = -1;
+	/** Fork: audio volume while this playlist is active (-1 = keep global) */
+	int volumeOverride = -1;
     };
 
     struct PlaylistDefinition {
@@ -121,6 +125,11 @@ public:
 	     * any positive value caps the FPS while on battery.
 	     */
 	    int batteryMaximumFPS;
+	    /**
+	     * Minutes without X11 input before pausing (MIT-SCREEN-SAVER).
+	     * 0 disables it.
+	     */
+	    uint32_t idlePauseMinutes;
 	    /**
 	     * Wayland-only: if true, only consider fullscreen toplevels that are also activated.
 	     * Useful for compositors with "virtual" fullscreen windows (e.g. scrollable tiling).
@@ -232,6 +241,7 @@ public:
 	    .maximumFPS = 30,
 	    .pauseOnFullscreen = true,
 	    .batteryMaximumFPS = -1,
+	    .idlePauseMinutes = 0,
             .pauseOnFullscreenOnlyWhenActive = false,
             .fullscreenPauseIgnoreAppIds = {},
             .debug = {

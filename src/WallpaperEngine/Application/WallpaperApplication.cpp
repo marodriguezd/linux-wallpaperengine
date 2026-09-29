@@ -899,14 +899,16 @@ void WallpaperApplication::render () {
 
 	const bool fullscreen = this->m_fullScreenDetector->anythingFullscreen ();
 	const bool batteryPause = this->refreshBatteryState ();
+	const bool idlePause = this->idlePauseActive ();
 
 	// either trigger alone must hold the pause: refresh the reason so a
-	// fullscreen->battery (or reverse) handover resumes zero frames.
+	// fullscreen->battery->idle (or reverse) handover resumes zero frames.
 	// m_pauseStart is kept from the original entry so playlist timers
 	// account for the whole paused span on resume.
-	if (fullscreen || batteryPause) {
+	if (fullscreen || batteryPause || idlePause) {
 	    this->m_pausedForFullscreen = fullscreen;
 	    this->m_pausedForBattery = batteryPause;
+	    this->m_pausedForIdle = idlePause;
 
 	    if (this->m_context.state.general.keepRunning) {
 		return;
@@ -929,6 +931,8 @@ void WallpaperApplication::render () {
 	this->m_isPaused = false;
 	this->m_pausedForFullscreen = false;
 	this->m_pausedForBattery = false;
+	this->m_pausedForIdle = false;
+	sLog.out ("Resumed rendering");
     } else {
 	// update g_Daytime
 	time (&seconds);
@@ -981,15 +985,20 @@ void WallpaperApplication::render () {
 	    }
 	}
 #endif /* DEMOMODE */
-	// check for fullscreen windows or battery mode and wait until clear
+	// check for fullscreen windows, battery mode or idleness and wait until clear
 	const bool fullscreen = this->m_fullScreenDetector->anythingFullscreen ();
 	const bool batteryPause = this->refreshBatteryState ();
+	const bool idlePause = this->idlePauseActive ();
 
-	if ((fullscreen || batteryPause) && this->m_context.state.general.keepRunning) {
+	if ((fullscreen || batteryPause || idlePause) && this->m_context.state.general.keepRunning) {
 	    this->m_isPaused = true;
 	    this->m_pausedForFullscreen = fullscreen;
 	    this->m_pausedForBattery = batteryPause;
+	    this->m_pausedForIdle = idlePause;
 	    this->m_pauseStart = std::chrono::steady_clock::now ();
+	    sLog.out (
+		"Paused rendering: ", fullscreen ? "fullscreen window" : (batteryPause ? "on battery" : "input idle")
+	    );
 
 	    m_renderContext->setPause (true);
 	    return;
@@ -997,6 +1006,9 @@ void WallpaperApplication::render () {
     }
 
     this->updatePlaylists ();
+
+    // per-playlist overrides (fps cap, volume) follow the active playlists
+    this->applyPlaylistOverrides ();
 
     // playlist skips requested via SIGUSR1/SIGUSR2: performed here (render
     // thread with GL context), never inside the signal handler itself
@@ -1055,6 +1067,53 @@ bool WallpaperApplication::refreshBatteryState () {
     this->m_context.state.render.batteryActive = onBattery;
 
     return this->m_context.settings.render.batteryMaximumFPS == 0 && onBattery;
+}
+
+bool WallpaperApplication::idlePauseActive () {
+    const uint32_t minutes = this->m_context.settings.render.idlePauseMinutes;
+
+    if (minutes == 0) {
+	return false;
+    }
+
+    const auto now = std::chrono::steady_clock::now ();
+
+    if (now - this->m_lastIdleCheck >= std::chrono::seconds (5)) {
+	if (this->m_idleDetector == nullptr) {
+	    this->m_idleDetector = std::make_unique<Render::Drivers::Detectors::X11IdleDetector> ();
+	}
+
+	this->m_idleCache
+	    = this->m_idleDetector->idleMilliseconds () >= static_cast<std::uint64_t> (minutes) * 60U * 1000U;
+	this->m_lastIdleCheck = now;
+    }
+
+    return this->m_idleCache;
+}
+
+void WallpaperApplication::applyPlaylistOverrides () {
+    int fps = -1;
+    int volume = this->m_context.settings.audio.volume;
+
+    for (const auto& [screen, playlist] : this->m_activePlaylists) {
+	if (playlist.definition.settings.fpsCap > 0 && (fps < 0 || playlist.definition.settings.fpsCap < fps)) {
+	    fps = playlist.definition.settings.fpsCap;
+	}
+
+	if (playlist.definition.settings.volumeOverride >= 0) {
+	    volume = playlist.definition.settings.volumeOverride;
+	}
+    }
+
+    if (fps != this->m_context.state.render.playlistFps) {
+	this->m_context.state.render.playlistFps = fps;
+	sLog.out ("Playlist fps cap: ", fps < 0 ? "off" : std::to_string (fps));
+    }
+
+    if (volume != this->m_context.state.audio.volume) {
+	this->m_context.state.audio.volume = volume;
+	sLog.out ("Playlist volume: ", volume);
+    }
 }
 
 std::string WallpaperApplication::currentTitle () const {

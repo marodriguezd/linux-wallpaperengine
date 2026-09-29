@@ -236,7 +236,9 @@ if(X11_SUPPORT_FOUND)
         src/WallpaperEngine/Render/Drivers/Output/X11Output.cpp
         src/WallpaperEngine/Render/Drivers/Output/X11Output.h
         src/WallpaperEngine/Render/Drivers/Detectors/X11FullScreenDetector.cpp
-        src/WallpaperEngine/Render/Drivers/Detectors/X11FullScreenDetector.h)
+        src/WallpaperEngine/Render/Drivers/Detectors/X11FullScreenDetector.h
+        src/WallpaperEngine/Render/Drivers/Detectors/X11IdleDetector.cpp
+        src/WallpaperEngine/Render/Drivers/Detectors/X11IdleDetector.h)
     SET(X11_INCLUDES
         ${X11_INCLUDE_DIR}
         ${XRANDR_INCLUDE_DIR})

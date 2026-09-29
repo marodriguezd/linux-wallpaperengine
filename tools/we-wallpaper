@@ -651,11 +651,71 @@ status() {
     fi
 }
 
+# Fase MPRIS-plan: fetch <url> [id]. Video (mp4/webm/mov/m4v) -> carpeta
+# workshop con project.json + refresh de caché; imagen -> backgrounds-lab
+# para feh (el engine solo representa video/scene/web, no estáticos sueltos).
+fetch_url() {
+    local url="$1" want_id="${2:-}"
+    [ -z "$url" ] && { echo "Uso: we-wallpaper fetch <url> [id]"; return 1; }
+    local downloader=""
+    command -v curl >/dev/null 2>&1 && downloader="curl -fSL --retry 2 -o"
+    if [ -z "$downloader" ]; then
+	command -v wget >/dev/null 2>&1 || { echo "Ni curl ni wget disponibles"; return 1; }
+	downloader="wget -O"
+    fi
+
+    local base=$(basename "${url%%\?*}")
+    local ext=$(echo "${base##*.}" | tr '[:upper:]' '[:lower:]')
+    local id="$want_id"
+    [ -z "$id" ] && id=$(echo "${base%.*}" | tr -c '[:alnum:]_-' '_' | sed 's/__*/_/g; s/^_//; s/_$//')
+    [ -z "$id" ] && id="fetch-$(date +%s)"
+
+    case "$ext" in
+	mp4|webm|m4v|mov)
+	    local dir="$WE_DIR/$id" file="$base"
+	    [ -d "$dir" ] && { echo "Ya existe: $id (usa otro id)"; return 1; }
+	    mkdir -p "$dir" || return 1
+	    # shellcheck disable=SC2086
+	    if ! $downloader "$dir/$file" "$url"; then
+		rm -rf "$dir"; echo "Descarga fallida"; return 1
+	    fi
+	    if command -v ffprobe >/dev/null 2>&1 \
+		&& ! ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$dir/$file" 2>/dev/null | grep -q .; then
+		rm -rf "$dir"; echo "No es un video válido"; return 1
+	    fi
+	    python3 -c "
+import json
+json.dump({'title':'$id','type':'video','file':'$file','description':'fetched $url'}, open('$dir/project.json','w'), indent=1)
+print()
+"
+	    echo "Video listo: $id"
+	    if engine_supports_library; then
+		"$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
+		echo "Caché actualizada"
+	    fi
+	    ;;
+	jpg|jpeg|png|webp|bmp)
+	    local lab="$HOME/Pictures/backgrounds-lab"
+	    mkdir -p "$lab" || return 1
+	    local dest="$lab/$id.$ext"
+	    [ -f "$dest" ] && { echo "Ya existe: $dest"; return 1; }
+	    # shellcheck disable=SC2086
+	    $downloader "$dest" "$url" || { echo "Descarga fallida"; return 1; }
+	    echo "Imagen en $dest (feh --bg-fill $dest)"
+	    ;;
+	*)
+	    echo "Extensión no soportada: .$ext (video: mp4/webm/m4v/mov; imagen: jpg/png/webp/bmp)"
+	    return 1
+	    ;;
+    esac
+}
+
 usage() {
     local fps=$(get_refresh_rate)
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
     echo ""
     echo "  list                                  Listar wallpapers (caché Fase 2)"
+    echo "  fetch <url> [id]                      Descargar video/imagen web"
     echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
     echo "  refresh                               Reescanear workshop a la caché"
     echo "  make-previews [--force]               Generar thumbs en la caché"
@@ -679,6 +739,7 @@ usage() {
 
 case "${1:-}" in
     list)       list_wallpapers ;;
+    fetch)      fetch_url "$2" "$3" ;;
     switch)     switch_wallpaper "$2" ;;
     refresh)    refresh_library ;;
     make-previews) make_previews "$2" ;;

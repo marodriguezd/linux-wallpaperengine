@@ -15,6 +15,8 @@ public:
     struct {
 	/** Set by WallpaperApplication while running on battery (battery feature enabled) */
 	bool batteryActive = false;
+	/** FPS cap from the active playlist (-1 = none), applied in effectiveMaximumFPS */
+	int playlistFps = -1;
     } render {};
 
     struct {
