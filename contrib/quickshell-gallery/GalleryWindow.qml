@@ -494,6 +494,7 @@ FloatingWindow {
                             const n = m ? parseInt(m[1], 10) + 1 : 2;
                             root.galleryModel.exploreQuery = "archive" + n;
                             root.galleryModel.exploreFilter = "";
+                            root.galleryModel.explorePage = n;
                             root.galleryModel.explore();
                         }
                         return;
