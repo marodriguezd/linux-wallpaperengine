@@ -20,46 +20,48 @@ Bring **Wallpaper Engine**-style live wallpapers to Linux! This project allows y
 
 ---
 
-## 🐧 Fork: X11 + DWM + catálogo y galería (rama `feat/battery-x11`)
+## 🐧 Fork: X11 + DWM + wallpaper catalog and gallery (branch `feat/battery-x11`)
 
-> Todo lo de abajo es **nuestro añadido** sobre el upstream de
-> [Almamu](https://github.com/Almamu/linux-wallpaperengine), al que seguimos
-> haciendo merge. Nada del README original se ha tocado; esta sección es
-> autoproclamada y vive solo en la rama del fork.
+> Everything in this section is **our own addition** on top of
+> [Almamu](https://github.com/Almamu/linux-wallpaperengine)'s upstream, which we
+> keep merging into. The original README is untouched: this section is
+> self-declared and only lives on the fork branch.
 
-![Galería local: filtros con contadores, meta por tarjeta, badge ACTIVA y panel de propiedades](docs/images/gallery-local.png)
+![Local gallery: filters with live counts, per-card metadata, ACTIVE badge and the properties panel](docs/images/gallery-local.png)
 
-![Galería Explorar: MotionBGS con thumbs remotos, chips por fuente, instalar y cargar más](docs/images/gallery-explore.png)
+![Explore gallery: MotionBGS with remote thumbnails, per-source chips, install and load more](docs/images/gallery-explore.png)
 
-**Qué añade el fork, en corto:**
+**What the fork adds, in short:**
 
-* **Batería y rendimiento** — `--fps-battery`, `--pause-on-battery`,
-  `--profile {lite,balanced,full}`, throttling vía `effectiveMaximumFPS()`
-  con límite por batería, EWMH fullscreen correcto y detección con UPower +
-  sysfs. Ver [`docs/BATTERY.md`](docs/BATTERY.md).
-* **Catálogo local** — `Library` en C++ escanea las raíces de Workshop,
-  cachea en `~/.cache/linux-wallpaperengine/library.json` y expone
-  `--list-library/--search/--type/--json/--refresh` y `make-previews`.
-  Ver [`docs/CATALOG.md`](docs/CATALOG.md).
-* **Helper `we-wallpaper`** — apply/restore, playlists con señales, cambio de
-  tema en cascada (rofi → dmenu → fzf → terminal), favoritos, tags,
-  importación y props por fondo. Ver [`docs/PLAYLIST.md`](docs/PLAYLIST.md),
+* **Battery and performance** — `--fps-battery`, `--pause-on-battery`,
+  `--profile {lite,balanced,full}`, throttling through `effectiveMaximumFPS()`
+  with a battery-aware cap, correct EWMH fullscreen handling, and detection
+  via UPower + sysfs. See [`docs/BATTERY.md`](docs/BATTERY.md).
+* **Local catalog** — a C++ `Library` that scans the Workshop roots, caches
+  to `~/.cache/linux-wallpaperengine/library.json`, and exposes
+  `--list-library/--search/--type/--json/--refresh` plus `make-previews`.
+  See [`docs/CATALOG.md`](docs/CATALOG.md).
+* **`we-wallpaper` helper** — apply/restore, signal-driven playlists,
+  cascading wallpaper picker (rofi → dmenu → fzf → terminal), favorites,
+  tags, importing, and per-wallpaper property overrides.
+  See [`docs/PLAYLIST.md`](docs/PLAYLIST.md) and
   [`docs/SWITCH-THEME.md`](docs/SWITCH-THEME.md).
-* **MPRIS + idle-pause + `fetch`** — player D-Bus para controles externos,
-  pausa por inactividad y descarga de vídeos/imágenes sueltas.
-  Ver [`docs/MPRIS.md`](docs/MPRIS.md).
-* **Galería en Quickshell** — `contrib/quickshell-gallery/`: biblioteca local
-  con filtros y contadores, favoritos, props por fondo y pestaña **Explorar**
-  con bing / wallhaven / motionbgs / minimal, instalar, borrar y cargar más.
-  Ver [`docs/GUI.md`](docs/GUI.md).
-* **Store online** — reutiliza el comportamiento descrito en
-  [antwny/aura](https://github.com/antwny/aura) (GPL-3.0, como este proyecto),
-  reimplementado desde cero en el helper. Ver [`docs/CATALOG.md`](docs/CATALOG.md).
+* **MPRIS + idle-pause + `fetch`** — a D-Bus player for external controls,
+  pause on inactivity, and downloading standalone videos/images.
+  See [`docs/MPRIS.md`](docs/MPRIS.md).
+* **Quickshell gallery** — `contrib/quickshell-gallery/`: local library with
+  filters and counts, favorites, per-wallpaper properties, and an **Explore**
+  tab covering bing / wallhaven / motionbgs / minimal with install, remove and
+  load more. See [`docs/GUI.md`](docs/GUI.md).
+* **Online store** — reuses the behavior described in
+  [antwny/aura](https://github.com/antwny/aura) (GPL-3.0, same as this
+  project), reimplemented from scratch in the helper.
+  See [`docs/CATALOG.md`](docs/CATALOG.md).
 
-**Cómo se usa aquí:** se compila el motor de este fork y el helper se instala en
-`~/.local/bin/we-wallpaper`; la galería es un módulo de Quickshell aparte, así
-que nada de esto ata el motor a un compositor concreto (DWM/X11 funciona igual
-que en otros X11).
+**How it is used here:** the engine from this fork is compiled and the helper
+is installed to `~/.local/bin/we-wallpaper`; the gallery is a separate
+Quickshell module, so none of this ties the engine to a specific compositor
+(DWM/X11 behaves the same as on any other X11 setup).
 
 ---
 
