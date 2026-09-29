@@ -27,3 +27,29 @@
 
 `workshopid` numérico o string gana; si falta, el nombre de carpeta
 (`desktophut-sanyo` funciona como `--bg` igual que antes).
+
+## Store online (`catalog` / `catalog-get`)
+
+TSV `ref|title|thumb|file|kind`; ref lista para `catalog-get`.
+Inspiración y formatos descubiertos vía
+[antwny/aura](https://github.com/antwny/aura) (GPL-3.0, como este
+fork): comportamiento reimplementado desde cero en el helper, sin
+copiar su código.
+
+* `bing`: 16 dailies (`idx=0,8`, `mkt=en-US`); thumb con
+  `pid=hp&w=480&h=270` (el `_480x270` pelado da 404) y full `_UHD`
+  (4K). `catalog bing archive[N]`: histórico zkeq (1616 dailies,
+  `~/.cache/we-wallpaper/online/bing_archive.json`); `catalog-get`
+  resuelve live (16 días) + fallback al archivo.
+* `wallhaven`: search API (`purity=100`, `toplist`, 24); con key
+  opcional (`keys.conf` o `WALLHAVEN_KEY`) hay búsqueda completa.
+* `motionbgs`: vídeos MP4 sin API pública — scraping HTML con UA
+  Firefox (portada, `tag:xxx`, búsqueda). `catalog-get
+  motionbgs:<id> [hd|4k]` descarga el mp4 (`/dl/hd|4k/<id>/`, HD por
+  defecto) y lo registra como proyecto de vídeo. Si cambian el HTML,
+  falla cerrado con mensaje.
+* `minimal`: colección DenverCoder1 (337 fondos, JSON en GitHub raw
+  con caché 24h); thumbs vía proxy `wsrv.nl`; título/autor del
+  filename. `catalog-get` usa URL determinista `images/<nombre>`.
+* Hosts quisquillosos: `fetch_url` acepta `WE_FETCH_UA`,
+  `WE_FETCH_REFERER`, `WE_FETCH_EXT`, `WE_FETCH_NAME`.

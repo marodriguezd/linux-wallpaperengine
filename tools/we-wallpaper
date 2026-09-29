@@ -700,7 +700,38 @@ catalog() {
     local src="${1:-}" query="${2:-}"
     case "$src" in
 	bing)
-	    curl -fsSL -m 25 "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8" 2>/dev/null \
+	    # Formato estilo Aura (GPL-3): thumb con pid+resize (el _480x270
+	    # pelado da 404) y full _UHD (4K). Dos páginas: 16 dailies.
+	    # query "archive[N]": histórico zkeq (1616 dailies, caché local).
+	    if [[ "$query" == archive* ]]; then
+		local pg=1
+		[[ "$query" =~ archive([0-9]+) ]] && pg="${BASH_REMATCH[1]}"
+		local ocache="${XDG_CACHE_HOME:-$HOME/.cache}/we-wallpaper/online"
+		mkdir -p "$ocache" 2>/dev/null
+		local af="$ocache/bing_archive.json"
+		[ -f "$af" ] || curl -fsSL -m 40 -A "Mozilla/5.0 (X11; Linux x86_64)" \
+		    "https://raw.githubusercontent.com/zkeq/Bing-Wallpaper-Action/main/data/en-US_all.json" \
+		    -o "$af" 2>/dev/null
+		[ -f "$af" ] || { echo "bing: sin archivo (¿red?)"; return 1; }
+		MB_PG="$pg" MB_AF="$af" python3 -c "
+import json, os, sys
+pg = max(int(os.environ.get('MB_PG', '1')), 1)
+try:
+    data = json.load(open(os.environ['MB_AF']))
+except Exception:
+    sys.exit('bing: archivo corrupto')
+items = data.get('data', [])
+start = 16 + (pg - 1) * 24
+for img in items[start:start + 24]:
+    base = 'https://www.bing.com' + img.get('urlbase', '')
+    title = (img.get('title', '') or img.get('copyright', '').split(' (')[0])[:80]
+    print('bing:%s|%s|%s_1920x1080.jpg&pid=hp&w=480&h=270&rs=1&c=4|%s_UHD.jpg|image' % (
+        img.get('startdate', ''), title.replace('|', '/'), base, base))
+"
+		return 0
+	    fi
+	    for idx in 0 8; do
+	    curl -fsSL -m 25 "https://www.bing.com/HPImageArchive.aspx?format=js&idx=$idx&n=8&mkt=en-US" 2>/dev/null \
 		| python3 -c "
 import json, sys
 try:
@@ -710,9 +741,10 @@ except Exception:
 for img in data.get('images', []):
     base = 'https://www.bing.com' + img.get('urlbase', '')
     title = (img.get('copyright', '') or 'bing').split(' (')[0][:80]
-    print('bing:%s|%s|%s_480x270.jpg|%s_1920x1080.jpg|image' % (
+    print('bing:%s|%s|%s_1920x1080.jpg&pid=hp&w=480&h=270&rs=1&c=4|%s_UHD.jpg|image' % (
         img.get('startdate', ''), title.replace('|', '/'), base, base))
 "
+	    done
 	    ;;
 	wallhaven)
 	    local key_args=() key=""
@@ -738,12 +770,113 @@ for w in data.get('data', [])[:24]:
 "
 	    ;;
 	motionbgs)
-	    echo "motionbgs: sin API pública (el site no expone JSON); pendiente"
-	    echo "mientras tanto: busca el mp4 y usa 'we-wallpaper fetch <url>'"
-	    return 1
+	    # Sin API pública: scraping HTML con UA de navegador, reimplementado
+	    # desde cero a partir del comportamiento de Aura (GPL-3, ver docs).
+	    # query vacía = portada; tag:xxx = tag; texto = búsqueda.
+	    MB_Q="$query" python3 -c "
+import html as H, os, re, sys, urllib.parse, urllib.request
+q = os.environ.get('MB_Q', '').strip()
+if q.lower().startswith('tag:'):
+    url = 'https://motionbgs.com/tag:%s/' % q[4:].strip().lower()
+elif q:
+    url = 'https://motionbgs.com/search?q=%s' % urllib.parse.quote_plus(q)
+else:
+    url = 'https://motionbgs.com/'
+req = urllib.request.Request(url, headers={
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0',
+    'Accept-Language': 'en-US,en;q=0.5', 'Referer': 'https://motionbgs.com/'})
+try:
+    raw = urllib.request.urlopen(req, timeout=25).read().decode('utf-8', 'replace')
+except Exception as e:
+    sys.exit('motionbgs: red falló (%s)' % e)
+body = raw[raw.find('<body'):] if '<body' in raw else raw
+seen = set()
+n = 0
+for m in re.finditer(r'/media/(\d+)/([A-Za-z0-9][^\"\\s<>]{0,160}\.jpg)', body):
+    mid, fn = m.group(1), m.group(2)
+    if mid in seen:
+        continue
+    seen.add(mid)
+    title = ''
+    a = body.rfind('<a ', 0, m.start())
+    if a != -1:
+        t = re.search(r'title=\"([^\"]*)\"', body[a:m.start()])
+        if t:
+            title = t.group(1)
+            if title.lower().endswith(' live wallpaper'):
+                title = title[:-15]
+    if not title:
+        s = re.search(r'class=ttl>([^<]+)<', body[m.start():m.start() + 2000])
+        if s:
+            title = s.group(1)
+    if not title:
+        slug = fn.split('.')[0]
+        title = ' '.join(w.capitalize() for w in re.split(r'[-_]+', slug) if w and not w.isdigit())
+    title = H.unescape(title.strip()) or ('MotionBGS ' + mid)
+    res = '4K' if ('4k' in fn.lower() or '3840x2160' in fn) else 'HD'
+    print('motionbgs:%s|%s [%s]|%s|https://motionbgs.com/dl/hd/%s/|video' % (
+        mid, title.replace('|', '/'), res,
+        'https://motionbgs.com/i/c/364x205/media/%s/%s' % (mid, fn), mid))
+    n += 1
+    if n >= 24:
+        break
+if n == 0:
+    sys.exit('motionbgs: sin resultados (¿HTML cambiado?)')
+"
+	    ;;
+	minimal)
+	    # Colección DenverCoder1 (idea de Aura, reimplementado): JSON en
+	    # GitHub raw con caché local 24h; thumbs vía proxy wsrv.nl.
+	    local ocache="${XDG_CACHE_HOME:-$HOME/.cache}/we-wallpaper/online"
+	    mkdir -p "$ocache" 2>/dev/null
+	    local cf="$ocache/minimalistic_catalog.json"
+	    if [ ! -f "$cf" ] || [ "$(($(date +%s) - $(stat -c %Y "$cf" 2>/dev/null || echo 0)))" -ge 86400 ]; then
+		curl -fsSL -m 25 -A "Mozilla/5.0 (X11; Linux x86_64)" \
+		    "https://raw.githubusercontent.com/DenverCoder1/minimalistic-wallpaper-collection/main/api/generated/images.json" \
+		    -o "$cf.tmp" 2>/dev/null && mv "$cf.tmp" "$cf" || rm -f "$cf.tmp"
+	    fi
+	    [ -f "$cf" ] || { echo "minimal: sin catálogo (¿red?)"; return 1; }
+	    MB_Q="$query" MB_CF="$cf" python3 -c "
+import json, os, sys, urllib.parse
+q = os.environ.get('MB_Q', '').strip().lower()
+try:
+    entries = json.load(open(os.environ['MB_CF']))
+except Exception:
+    sys.exit('minimal: catálogo corrupto')
+def cap(s):
+    return ' '.join(w[:1].upper() + w[1:] for w in s.split())
+n = 0
+for e in entries:
+    name = e.get('name', '')
+    stem = name.rsplit('.', 1)[0]
+    low = stem.lower()
+    if low.startswith('alena-aenami-'):
+        author, traw = 'Alena Aenami', stem[len('alena-aenami-'):]
+    elif low.startswith('unknown-'):
+        author, traw = 'Minimalista', stem[len('unknown-'):]
+    elif '-' in stem:
+        a, traw = stem.split('-', 1)
+        author = cap(a.replace('_', ' '))
+    else:
+        author, traw = 'Minimalista', stem
+    title = cap(traw.replace('-', ' ').replace('_', ' '))
+    if q and q not in (name + ' ' + title + ' ' + author).lower():
+        continue
+    sz = e.get('size') or 0
+    res = '4K' if sz > 2000000 else ('2K' if sz > 800000 else 'HD')
+    durl = e.get('download_url', '')
+    thumb = 'https://wsrv.nl/?url=%s&w=400&h=225&fit=cover&output=jpg&q=80' % urllib.parse.quote(durl, safe='')
+    print('minimal:%s|%s (%s) [%s]|%s|%s|image' % (
+        name, title.replace('|', '/'), author.replace('|', '/'), res, thumb, durl))
+    n += 1
+    if n >= 24:
+        break
+if n == 0:
+    sys.exit('minimal: sin resultados')
+"
 	    ;;
 	*)
-	    echo "Uso: we-wallpaper catalog <bing|wallhaven|motionbgs> [query]"
+	    echo "Uso: we-wallpaper catalog <bing|wallhaven|motionbgs|minimal> [query]"
 	    return 1
 	    ;;
     esac
@@ -757,15 +890,41 @@ catalog_get() {
     case "$src" in
 	bing)
 	    local url="https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8"
+	    local url2="https://www.bing.com/HPImageArchive.aspx?format=js&idx=8&n=8"
 	    local file
-	    file=$(curl -fsSL -m 25 "$url" 2>/dev/null | python3 -c "
+	    file=$( (curl -fsSL -m 25 "$url" 2>/dev/null; curl -fsSL -m 25 "$url2" 2>/dev/null) | python3 -c "
 import json, sys
-for img in json.load(sys.stdin).get('images', []):
-    if img.get('startdate', '') == '$key':
-        print('https://www.bing.com' + img.get('urlbase', '') + '_1920x1080.jpg')
-        break
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        data = json.loads(line)
+    except Exception:
+        continue
+    for img in data.get('images', []):
+        if img.get('startdate', '') == '$key':
+            print('https://www.bing.com' + img.get('urlbase', '') + '_UHD.jpg')
+            raise SystemExit
 ")
-	    [ -n "$file" ] || { echo "No encontrado en Bing de hoy: $key"; return 1; }
+	    if [ -z "$file" ]; then
+		# Fallback: archivo histórico cacheado (refs viejas).
+		local af="${XDG_CACHE_HOME:-$HOME/.cache}/we-wallpaper/online/bing_archive.json"
+		if [ -f "$af" ]; then
+		    file=$(MB_KEY="$key" MB_AF="$af" python3 -c "
+import json, os
+try:
+    data = json.load(open(os.environ['MB_AF']))
+except Exception:
+    raise SystemExit
+for img in data.get('data', []):
+    if img.get('startdate', '') == os.environ.get('MB_KEY', ''):
+        print('https://www.bing.com' + img.get('urlbase', '') + '_UHD.jpg')
+        break
+" 2>/dev/null)
+		fi
+	    fi
+	    [ -n "$file" ] || { echo "No encontrado en Bing: $key (prueba 'catalog bing archive')"; return 1; }
 	    fetch_url "$file" "$id"
 	    ;;
 	wallhaven)
@@ -778,6 +937,25 @@ print(d.get('path', ''))
 " 2>/dev/null)
 	    [ -n "$detail" ] || { echo "Wallhaven sin file directo: $key"; return 1; }
 	    fetch_url "$detail" "$id"
+	    ;;
+	motionbgs)
+	    # catalog-get motionbgs:<id> [hd|4k|<id-custom>]: mp4 directo.
+	    local q="hd" wid="motionbgs-$key-hd"
+	    if [ "${2:-}" = "4k" ]; then
+		q="4k"; wid="motionbgs-$key-4k"
+	    elif [ -n "${2:-}" ]; then
+		wid="$2"
+	    fi
+	    [ -d "$WE_DIR/$wid" ] && { echo "Ya existe: $wid (usa otro id)"; return 1; }
+	    WE_FETCH_UA="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
+	    WE_FETCH_REFERER="https://motionbgs.com/" \
+	    WE_FETCH_EXT="mp4" \
+	    WE_FETCH_NAME="motionbgs-$key.mp4" \
+		fetch_url "https://motionbgs.com/dl/$q/$key/" "$wid"
+	    ;;
+	minimal)
+	    # La URL es determinista: images/<nombre> en el repo DenverCoder1.
+	    fetch_url "https://raw.githubusercontent.com/DenverCoder1/minimalistic-wallpaper-collection/main/images/$key" "$id"
 	    ;;
 	*)
 	    echo "Ref desconocida: $ref (bing:FECHA | wallhaven:ID)"
@@ -1039,14 +1217,16 @@ print()
 fetch_url() {
     local url="$1" want_id="${2:-}"
     [ -z "$url" ] && { echo "Uso: we-wallpaper fetch <url> [id]"; return 1; }
-    local downloader=""
-    command -v curl >/dev/null 2>&1 && downloader="curl -fSL --retry 2 -o"
-    if [ -z "$downloader" ]; then
+    # Overrides para hosts quisquillosos (motionbgs): WE_FETCH_UA,
+    # WE_FETCH_REFERER, WE_FETCH_EXT, WE_FETCH_NAME.
+    local use_curl=0
+    command -v curl >/dev/null 2>&1 && use_curl=1
+    if [ "$use_curl" = 0 ]; then
 	command -v wget >/dev/null 2>&1 || { echo "Ni curl ni wget disponibles"; return 1; }
-	downloader="wget -O"
     fi
 
     local base=$(basename "${url%%\?*}")
+    [ -n "${WE_FETCH_NAME:-}" ] && base="$WE_FETCH_NAME"
 
     # URLs estilo Bing (/th?id=NOMBRE.EXT&...): el basename del path no sirve
     if [[ "$base" != *.* ]]; then
@@ -1055,17 +1235,29 @@ fetch_url() {
     fi
 
     local ext=$(echo "${base##*.}" | tr '[:upper:]' '[:lower:]')
+    [ -n "${WE_FETCH_EXT:-}" ] && ext="$WE_FETCH_EXT"
     local id="$want_id"
     [ -z "$id" ] && id=$(echo "${base%.*}" | tr -c '[:alnum:]_-' '_' | sed 's/__*/_/g; s/^_//; s/_$//')
     [ -z "$id" ] && id="fetch-$(date +%s)"
+
+    # Descarga con curl (array: UA/referer con espacios a salvo) o wget.
+    dl_run() { # $1=dest $2=url
+	if [ "$use_curl" = 1 ]; then
+	    local -a dl=(curl -fSL --retry 2)
+	    [ -n "${WE_FETCH_UA:-}" ] && dl+=(--user-agent "$WE_FETCH_UA")
+	    [ -n "${WE_FETCH_REFERER:-}" ] && dl+=(--referer "$WE_FETCH_REFERER")
+	    "${dl[@]}" -o "$1" "$2"
+	else
+	    wget -O "$1" "$2"
+	fi
+    }
 
     case "$ext" in
 	mp4|webm|m4v|mov)
 	    local dir="$WE_DIR/$id" file="$base"
 	    [ -d "$dir" ] && { echo "Ya existe: $id (usa otro id)"; return 1; }
 	    mkdir -p "$dir" || return 1
-	    # shellcheck disable=SC2086
-	    if ! $downloader "$dir/$file" "$url"; then
+	    if ! dl_run "$dir/$file" "$url"; then
 		rm -rf "$dir"; echo "Descarga fallida"; return 1
 	    fi
 	    register_video_file "$dir" "$id" "$file" "fetched $url" || return 1
@@ -1075,8 +1267,7 @@ fetch_url() {
 	    mkdir -p "$lab" || return 1
 	    local dest="$lab/$id.$ext"
 	    [ -f "$dest" ] && { echo "Ya existe: $dest"; return 1; }
-	    # shellcheck disable=SC2086
-	    $downloader "$dest" "$url" || { echo "Descarga fallida"; return 1; }
+	    dl_run "$dest" "$url" || { echo "Descarga fallida"; return 1; }
 	    echo "Imagen en $dest (feh --bg-fill $dest)"
 	    ;;
 	*)
@@ -1098,8 +1289,8 @@ usage() {
     echo "  gallery-json                          Volcar JSON para galería quickshell"
     echo "  apply-id <id> [modo]                  Aplicar por id (para clicks)"
     echo "  fetch <url> [id]                      Descargar video/imagen web"
-    echo "  catalog <src> [query]               Explorar bing|wallhaven|motionbgs"
-    echo "  catalog-get <ref> [id]              Descargar ref (usa fetch)"
+    echo "  catalog <src> [query]               Explorar bing|wallhaven|motionbgs|minimal"
+    echo "  catalog-get <ref> [id|4k]           Descargar ref (usa fetch)"
     echo "  import <fich> [id] [--title ..]       Importar vídeo local a WE_DIR"
     echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
     echo "  grid [modo]                           Grid rofi con thumbs (cae a switch)"

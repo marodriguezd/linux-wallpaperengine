@@ -129,7 +129,9 @@ FloatingWindow {
                 Repeater {
                     model: [
                         { id: "bing", label: "bing" },
-                        { id: "wallhaven", label: "wallhaven" }
+                        { id: "wallhaven", label: "wallhaven" },
+                        { id: "motionbgs", label: "motion" },
+                        { id: "minimal", label: "minimal" }
                     ]
 
                     delegate: ShellButton {
