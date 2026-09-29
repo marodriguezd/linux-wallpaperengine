@@ -242,6 +242,95 @@ const ApplicationContext::PlaylistDefinition& ApplicationContext::getPlaylistFro
     return cur->second;
 }
 
+ApplicationContext::PlaylistDefinition ApplicationContext::playlistFromFile (const std::string& path) const {
+    PlaylistDefinition definition;
+    definition.name = std::filesystem::path (path).stem ().string ();
+    definition.settings.mode = "timer";
+    definition.settings.delayMinutes = 60;
+    definition.settings.order = "sequential";
+
+    std::ifstream file (path);
+
+    if (!file.is_open ()) {
+	sLog.exception ("Cannot open playlist file at ", path);
+    }
+
+    const auto trim = [] (std::string value) -> std::string {
+	const auto first = value.find_first_not_of (" \t\r\n");
+
+	if (first == std::string::npos) {
+	    return "";
+	}
+
+	return value.substr (first, value.find_last_not_of (" \t\r\n") - first + 1);
+    };
+
+    std::string line;
+
+    while (std::getline (file, line)) {
+	const std::string cleaned = trim (line);
+
+	if (cleaned.empty ()) {
+	    continue;
+	}
+
+	if (cleaned[0] == '#') {
+	    // headers: "# delay: <minutes>", "# order: random|sequential"
+	    auto body = trim (cleaned.substr (1));
+	    std::transform (body.begin (), body.end (), body.begin (), [] (unsigned char c) {
+		return std::tolower (c);
+	    });
+
+	    const auto colon = body.find (':');
+
+	    if (colon == std::string::npos) {
+		continue;
+	    }
+
+	    const std::string key = trim (body.substr (0, colon));
+	    const std::string headerValue = trim (body.substr (colon + 1));
+
+	    if (key == "delay") {
+		try {
+		    definition.settings.delayMinutes = std::max<uint32_t> (1, std::stoul (headerValue));
+		} catch (const std::exception&) {
+		    sLog.error ("Ignoring invalid delay header in ", path, ": ", headerValue);
+		}
+	    } else if (key == "order") {
+		if (headerValue == "random" || headerValue == "sequential") {
+		    definition.settings.order = headerValue;
+		} else {
+		    sLog.error ("Ignoring invalid order header in ", path, ": ", headerValue);
+		}
+	    }
+
+	    continue;
+	}
+
+	std::filesystem::path itemPath;
+
+	try {
+	    itemPath = translateBackground (cleaned);
+	} catch (const std::exception& e) {
+	    sLog.error ("Skipping playlist item ", cleaned, ": ", e.what ());
+	    continue;
+	}
+
+	if (itemPath.empty () || !std::filesystem::exists (itemPath)) {
+	    sLog.error ("Skipping playlist item not found: ", cleaned);
+	    continue;
+	}
+
+	definition.items.push_back (itemPath);
+    }
+
+    if (definition.items.empty ()) {
+	sLog.exception ("Playlist file has no usable items: ", path);
+    }
+
+    return definition;
+}
+
 ApplicationContext::ApplicationContext (int argc, char* argv[]) : m_argc (argc), m_argv (argv) { }
 
 void ApplicationContext::loadSettingsFromArgv () {
@@ -400,6 +489,35 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    }
 	})
 	.append ();
+    backgroundGroup.add_argument ("--playlist-file")
+	.help (
+	    "Uses a fork playlist file (one background id or path per line, '# delay: <minutes>' and "
+	    "'# order: random|sequential' headers supported). If used after --screen-root it is applied to that "
+	    "screen, otherwise it is used in window mode."
+	)
+	.action ([this, &lastScreen] (const std::string& value) -> void {
+	    auto filePlaylist = this->playlistFromFile (value);
+
+	    if (lastScreen.empty ()) {
+		this->settings.general.defaultPlaylist = std::move (filePlaylist);
+		if (this->settings.general.defaultBackground.empty ()
+		    && !this->settings.general.defaultPlaylist->items.empty ()) {
+		    this->settings.general.defaultBackground = this->settings.general.defaultPlaylist->items.front ();
+		}
+	    } else {
+		this->settings.general.screenPlaylists[lastScreen] = std::move (filePlaylist);
+		auto& screenPlaylist = this->settings.general.screenPlaylists[lastScreen];
+
+		if (!screenPlaylist.items.empty ()) {
+		    this->settings.general.screenBackgrounds[lastScreen] = screenPlaylist.items.front ();
+		}
+
+		if (this->settings.general.defaultBackground.empty () && !screenPlaylist.items.empty ()) {
+		    this->settings.general.defaultBackground = screenPlaylist.items.front ();
+		}
+	    }
+	})
+	.append ();
     backgroundGroup.add_argument ("--scaling")
 	.help (
 	    "Scaling mode to use when rendering the background, this applies to the previous --window, --screen-root, "
@@ -523,6 +641,16 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.help ("Fully pause rendering while running on battery (same as --fps-battery 0)")
 	.flag ()
 	.action ([this] (const std::string& value) -> void { this->settings.render.batteryMaximumFPS = 0; });
+
+    performanceGroup.add_argument ("--hwdec")
+	.help (
+	    "mpv hardware decoding backend for video wallpapers (default auto). "
+	    "On NVIDIA, video-to-video playlist switches can segfault inside libcuda "
+	    "while probing backends; --hwdec vaapi pins the working backend"
+	)
+	.choices ("auto", "auto-safe", "auto-copy", "no", "vaapi", "vdpau", "nvdec", "cuda", "vulkan")
+	.default_value (std::string ("auto"))
+	.store_into (this->settings.video.hwdec);
 
     performanceGroup.add_argument ("--profile")
 	.help (

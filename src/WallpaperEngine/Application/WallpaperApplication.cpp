@@ -384,16 +384,21 @@ bool WallpaperApplication::selectNextCandidate (ActivePlaylist& playlist, std::s
 }
 
 void WallpaperApplication::advancePlaylist (
-    const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now
+    const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now, int direction
 ) {
     if (playlist.order.empty ()) {
 	return;
     }
 
-    playlist.orderIndex = (playlist.orderIndex + 1) % playlist.order.size ();
+    if (direction >= 0) {
+	playlist.orderIndex = (playlist.orderIndex + 1) % playlist.order.size ();
 
-    if (playlist.orderIndex == 0 && playlist.definition.settings.order == "random") {
-	std::shuffle (playlist.order.begin (), playlist.order.end (), this->m_playlistRng);
+	if (playlist.orderIndex == 0 && playlist.definition.settings.order == "random") {
+	    std::shuffle (playlist.order.begin (), playlist.order.end (), this->m_playlistRng);
+	}
+    } else {
+	// previous item, no reshuffle so back-and-forth is symmetric
+	playlist.orderIndex = (playlist.orderIndex + playlist.order.size () - 1) % playlist.order.size ();
     }
 
     std::size_t candidateOrderIndex = playlist.orderIndex;
@@ -960,6 +965,18 @@ void WallpaperApplication::render () {
 
     this->updatePlaylists ();
 
+    // playlist skips requested via SIGUSR1/SIGUSR2: performed here (render
+    // thread with GL context), never inside the signal handler itself
+    const int skip = this->m_playlistSkip.exchange (0);
+
+    if (skip != 0) {
+	sLog.out ("Playlist skip requested: ", skip > 0 ? "next" : "previous");
+
+	for (auto& [screen, playlist] : this->m_activePlaylists) {
+	    this->advancePlaylist (screen, playlist, std::chrono::steady_clock::now (), skip > 0 ? 1 : -1);
+	}
+    }
+
     if (!this->m_context.settings.screenshot.take || this->m_screenShotTaken == true) {
 	return;
     }
@@ -1005,6 +1022,14 @@ bool WallpaperApplication::refreshBatteryState () {
     this->m_context.state.render.batteryActive = onBattery;
 
     return this->m_context.settings.render.batteryMaximumFPS == 0 && onBattery;
+}
+
+void WallpaperApplication::requestPlaylistSkip (int direction) {
+    if (direction > 0) {
+	this->m_playlistSkip.fetch_add (1);
+    } else if (direction < 0) {
+	this->m_playlistSkip.fetch_sub (1);
+    }
 }
 
 void WallpaperApplication::signal (int signal) {

@@ -191,6 +191,14 @@ public:
 	} screenshot;
 
 	/**
+	 * Video playback settings
+	 */
+	struct {
+	    /** mpv hardware decoding backend (auto, vaapi, nvdec, cuda, ...). auto = mpv decides */
+	    std::string hwdec;
+	} video;
+
+	/**
 	 * Library/catalog settings (list/search without starting the renderer)
 	 */
 	struct {
@@ -258,6 +266,9 @@ public:
             .delay = 5,
             .path = "",
         },
+        .video = {
+            .hwdec = "auto",
+        },
         .library = {
             .list = false,
             .search = "",
@@ -318,6 +329,11 @@ private:
     ) const;
     void registerPlaylist (PlaylistDefinition&& definition);
     [[nodiscard]] const PlaylistDefinition& getPlaylistFromConfig (const std::string& name);
+    /**
+     * Fork playlist file: one background id or path per line, '#' comments,
+     * '# delay: <minutes>' and '# order: random|sequential' headers supported.
+     */
+    [[nodiscard]] PlaylistDefinition playlistFromFile (const std::string& path) const;
 
     std::map<std::string, PlaylistDefinition> m_configPlaylists;
     bool m_loadedConfigPlaylists = false;

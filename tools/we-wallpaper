@@ -57,6 +57,7 @@ BACKEND=$(detect_backend)
 WE_PROFILE=${WE_PROFILE:-}
 WE_FPS_BATTERY=${WE_FPS_BATTERY:-}
 WE_PAUSE_ON_BATTERY=${WE_PAUSE_ON_BATTERY:-}
+PLAYLIST_FILE=${PLAYLIST_FILE:-}
 EOF
 }
 
@@ -64,7 +65,7 @@ load_state() {
     if [ -f "$STATE_FILE" ]; then
 	# shellcheck disable=SC1090
 	source "$STATE_FILE"
-	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}|${WE_PAUSE_ON_BATTERY:-}"
+	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}|${WE_PAUSE_ON_BATTERY:-}|${PLAYLIST_FILE:-}"
     fi
 }
 
@@ -130,6 +131,10 @@ fork_flags() {
 	printf '%s\n' "--pause-on-battery"
     elif [ -n "${WE_FPS_BATTERY:-}" ]; then
 	printf '%s\n' "--fps-battery" "$WE_FPS_BATTERY"
+    fi
+    # vaapi en NVIDIA evita el segfault de libcuda al cambiar de video
+    if [ -n "${WE_HWDEC:-}" ]; then
+	printf '%s\n' "--hwdec" "$WE_HWDEC"
     fi
 }
 
@@ -271,6 +276,80 @@ apply_all() {
     apply_theme "$(theme_image_for "$wallpaper_id")"
 }
 
+# Fase B: playlists formato propio (IDs por línea, cabeceras # delay: / # order:).
+# next/prev SOLO apuntan a engines con --playlist-file en su cmdline:
+# USR1/2 en un engine viejo es SIG_DFL = matar la sesión. pgrep -x no sirve
+# (comm se trunca a 15 chars); el [l] evita el self-match de pgrep -f.
+engine_pid() {
+    local base=$(basename "$ENGINE")
+    pgrep -f "[${base:0:1}]${base:1}.*--playlist-file" 2>/dev/null | head -n 1
+}
+
+playlist_play() {
+    local file="$1" target="${2:-$(get_primary_screen)}"
+    [ -f "$file" ] || { echo "Playlist no encontrada: $file"; return 1; }
+    local fps=$(get_refresh_rate)
+
+    killall "$ENGINE" 2>/dev/null
+
+    local fork_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && fork_args+=("$arg")
+    done < <(fork_flags)
+
+    local flags=(--scaling fill --silent)
+    if [ -n "${WE_FPS:-}" ]; then
+	flags+=(--fps "$WE_FPS")
+    elif [ -z "${WE_PROFILE:-}" ]; then
+	flags+=(--fps "$fps")
+    fi
+
+    # primer item para theming y estado
+    local first=$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$file" | head -n 1 | tr -d ' \t\r')
+
+    if [ "$target" = "all" ]; then
+	local screen_args=() first_screen=""
+	while IFS= read -r screen; do
+	    [ -z "$screen" ] && continue
+	    [ -z "$first_screen" ] && first_screen="$screen"
+	    screen_args+=(--screen-root "$screen" --playlist-file "$file")
+	done < <(get_all_screens)
+	[ ${#screen_args[@]} -eq 0 ] && { echo "Error: no se detectó ningún monitor"; return 1; }
+	# shellcheck disable=SC2086
+	env "${CURSOR_ENV[@]}" nohup $ENGINE \
+	    "${screen_args[@]}" \
+	    "${fork_args[@]}" \
+	    "${flags[@]}" \
+	    --assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	echo "Playlist $file en todos los monitores (modo: timer)"
+	PLAYLIST_FILE="$file" save_state "playlist" "playlist" "$first_screen" "playlist-all"
+    else
+	# shellcheck disable=SC2086
+	env "${CURSOR_ENV[@]}" nohup $ENGINE \
+	    --screen-root "$target" --playlist-file "$file" \
+	    "${fork_args[@]}" \
+	    "${flags[@]}" \
+	    --assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	echo "Playlist $file en $target (modo: timer)"
+	PLAYLIST_FILE="$file" save_state "playlist" "playlist" "$target" "playlist"
+    fi
+
+    [ -n "$first" ] && apply_theme "$(theme_image_for "$first")"
+    return 0
+}
+
+playlist_next() {
+    local pid=$(engine_pid)
+    [ -n "$pid" ] || { echo "Sin playlist en marcha (playlist-play primero)"; return 1; }
+    kill -USR1 "$pid" && echo "next ($pid)"
+}
+
+playlist_prev() {
+    local pid=$(engine_pid)
+    [ -n "$pid" ] || { echo "Sin playlist en marcha (playlist-play primero)"; return 1; }
+    kill -USR2 "$pid" && echo "prev ($pid)"
+}
+
 stop_wallpaper() {
     killall "$ENGINE" 2>/dev/null && echo "Wallpaper detenido" || echo "No hay wallpaper activo"
 }
@@ -344,12 +423,23 @@ restore_wallpaper() {
     saved_profile=$(echo "$state" | cut -d'|' -f6)
     saved_fps=$(echo "$state" | cut -d'|' -f7)
     saved_pob=$(echo "$state" | cut -d'|' -f8)
+    saved_pl=$(echo "$state" | cut -d'|' -f9)
 
     # respeta lo guardado salvo override por entorno actual
     [ -z "${WE_PROFILE:-}" ] && WE_PROFILE="$saved_profile"
     [ -z "${WE_FPS_BATTERY:-}" ] && WE_FPS_BATTERY="$saved_fps"
     [ -z "${WE_PAUSE_ON_BATTERY:-}" ] && WE_PAUSE_ON_BATTERY="$saved_pob"
     export WE_PROFILE WE_FPS_BATTERY WE_PAUSE_ON_BATTERY
+
+    # playlists guardadas se restauran como playlist, no como fondo fijo
+    if [ -n "$saved_pl" ] && [ -f "$saved_pl" ]; then
+	if [ "$apply_type" = "playlist-all" ]; then
+	    playlist_play "$saved_pl" "all"
+	else
+	    playlist_play "$saved_pl" "$screen"
+	fi
+	return $?
+    fi
 
     # Warn about video wallpapers (they work via nvdec-copy despite Vulkan warnings)
     if is_video_wallpaper "$id"; then
@@ -381,14 +471,17 @@ make_previews() {
     ensure_cache || { echo "Sin caché y sin engine fork: no se puede"; return 1; }
     mkdir -p "$THUMBS_DIR"
     local done=0 skipped=0 failed=0
-    while IFS='|' read -r id wtype wfile wpath; do
+    # NOTE: el loop lee del FD 3 y ffmpeg/engine llevan -nostdin + </dev/null:
+    # sin eso ffmpeg devora el stdin del process substitution y las líneas
+    # llegan rasgadas al read (IDs truncados como 3256064096 -> 56064096).
+    while IFS='|' read -r id wtype wfile wpath <&3; do
 	[ -z "$id" ] && continue
 	local thumb="$THUMBS_DIR/$id.png"
 	if [ $force -eq 0 ] && [ -s "$thumb" ]; then
 	    skipped=$((skipped + 1)); continue
 	fi
 	if [ "$wtype" = "video" ] && command -v ffmpeg >/dev/null 2>&1 && [ -f "$wpath/$wfile" ]; then
-	    if ffmpeg -y -loglevel error -i "$wpath/$wfile" -vframes 1 "$thumb" 2>/dev/null \
+	    if ffmpeg -nostdin -y -loglevel error -i "$wpath/$wfile" -vframes 1 "$thumb" 2>/dev/null \
 		&& [ -s "$thumb" ]; then
 		done=$((done + 1)); echo "thumb: $id (ffmpeg)"
 	    else
@@ -412,7 +505,7 @@ make_previews() {
 	    echo "thumb SKIP: $id (tipo '$wtype' sin fuente)"
 	    skipped=$((skipped + 1))
 	fi
-    done < <(python3 -c "
+    done 3< <(python3 -c "
 import json
 for it in json.load(open('$CACHE_FILE'))['items']:
     print('%s|%s|%s|%s' % (it.get('id',''), it.get('type',''), it.get('file',''), it.get('path','')))
@@ -567,6 +660,8 @@ usage() {
     echo "  refresh                               Reescanear workshop a la caché"
     echo "  make-previews [--force]               Generar thumbs en la caché"
     echo "  apply <id> [modo] [pantalla]          Aplicar wallpaper"
+    echo "  playlist-play <fich> [pant|all]      Playlist formato propio"
+    echo "  playlist-next / playlist-prev       Saltar (SIGUSR1/2 al engine)"
     echo "  apply-all <id> [modo]                 Aplicar a todos los monitores"
     echo "  restore                               Restaurar ultimo wallpaper guardado"
     echo "  stop                                  Detener"
@@ -578,6 +673,7 @@ usage() {
     echo "          WE_FPS=N (gana a todo)  WE_FPS_BATTERY=N (0=pausar)"
     echo "          WE_PAUSE_ON_BATTERY=1"
     echo "Env tema: WE_THEME=<preset>|auto|\"\"  WE_THEME_ENABLED=0|1  WE_WALLPAPER_REGISTER=0|1"
+    echo "Env video: WE_HWDEC=auto|vaapi|nvdec|cuda|... (vaapi evita segfault libcuda en NVIDIA)"
     echo "Refresh detectado: ${fps}Hz"
 }
 
@@ -588,6 +684,9 @@ case "${1:-}" in
     make-previews) make_previews "$2" ;;
     apply)      apply_wallpaper "$2" "$3" "$4" ;;
     apply-all)  apply_all "$2" "$3" ;;
+    playlist-play) playlist_play "$2" "$3" ;;
+    playlist-next) playlist_next ;;
+    playlist-prev) playlist_prev ;;
     restore)    restore_wallpaper ;;
     stop)       stop_wallpaper ;;
     status)     status ;;

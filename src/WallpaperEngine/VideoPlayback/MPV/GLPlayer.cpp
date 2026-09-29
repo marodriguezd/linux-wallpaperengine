@@ -1,5 +1,6 @@
 #include "GLPlayer.h"
 
+#include "WallpaperEngine/Application/WallpaperApplication.h"
 #include "WallpaperEngine/Logging/Log.h"
 
 #include <mpv/render_gl.h>
@@ -228,7 +229,11 @@ void GLPlayer::init () {
     }
 
     // ensure video is muted and plays in a loop
-    mpv_set_property_string (this->m_handle, "hwdec", "auto");
+    // hwdec comes from --hwdec (default auto); pinning e.g. vaapi avoids the
+    // NVIDIA libcuda probe race on video-to-video playlist switches
+    mpv_set_property_string (
+	this->m_handle, "hwdec", this->getContext ().getApp ().getContext ().settings.video.hwdec.c_str ()
+    );
     mpv_set_property_string (this->m_handle, "loop", "inf");
     mpv_set_property (this->m_handle, "volume", MPV_FORMAT_DOUBLE, &this->m_volume);
 

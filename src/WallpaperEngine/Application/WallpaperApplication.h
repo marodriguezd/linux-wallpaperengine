@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <random>
 
@@ -56,6 +57,11 @@ public:
      * @param signal
      */
     void signal (int signal);
+    /**
+     * Requests a playlist skip consumed by the render thread (+1 next, -1 prev).
+     * Async-signal-safe: only touches an atomic flag (call from SIGUSR1/SIGUSR2).
+     */
+    void requestPlaylistSkip (int direction);
     /**
      * @return Maps screens to loaded backgrounds
      */
@@ -163,7 +169,8 @@ private:
      */
     bool refreshBatteryState ();
     void advancePlaylist (
-	const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now
+	const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now,
+	int direction = 1
     );
     bool selectNextCandidate (ActivePlaylist& playlist, std::size_t& outOrderIndex);
     bool preflightWallpaper (const std::string& path);
@@ -187,6 +194,8 @@ private:
     std::unique_ptr<WallpaperEngine::WebBrowser::WebBrowserContext> m_browserContext = nullptr;
     std::unique_ptr<WallpaperEngine::Media::MediaSource> m_mediaSource = nullptr;
     std::mt19937 m_playlistRng { std::random_device {}() };
+    /** Pending playlist skips from SIGUSR1 (+1) / SIGUSR2 (-1), consumed in render() */
+    std::atomic<int> m_playlistSkip { 0 };
     bool m_isPaused = false;
     /** Pause was triggered by a fullscreen window (resume when none remains) */
     bool m_pausedForFullscreen = false;

@@ -13,6 +13,18 @@ void signalhandler (const int sig) {
 	return;
     }
 
+    // playlist control: only stores an atomic flag, the render thread
+    // performs the actual (GL-unsafe) switch. Never blocks or allocates here.
+    if (sig == SIGUSR1) {
+	app->requestPlaylistSkip (1);
+	return;
+    }
+
+    if (sig == SIGUSR2) {
+	app->requestPlaylistSkip (-1);
+	return;
+    }
+
     app->signal (sig);
 }
 
@@ -110,6 +122,8 @@ int main (int argc, char* argv[]) {
 	// attach signals to gracefully stop
 	std::signal (SIGINT, signalhandler);
 	std::signal (SIGTERM, signalhandler);
+	std::signal (SIGUSR1, signalhandler);
+	std::signal (SIGUSR2, signalhandler);
 	std::signal (SIGKILL, signalhandler);
 
 	// show the wallpaper application
@@ -118,6 +132,8 @@ int main (int argc, char* argv[]) {
 	// remove signal handlers before destroying app
 	std::signal (SIGINT, SIG_DFL);
 	std::signal (SIGTERM, SIG_DFL);
+	std::signal (SIGUSR1, SIG_DFL);
+	std::signal (SIGUSR2, SIG_DFL);
 	std::signal (SIGKILL, SIG_DFL);
 
 	delete app;
