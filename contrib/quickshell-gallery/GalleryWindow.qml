@@ -39,7 +39,21 @@ FloatingWindow {
                 Layout.fillWidth: true
                 eyebrow: "Fork catalog"
                 title: "Wallpapers"
-                subtitle: "Type to filter / Enter applies first / Esc closes"
+                subtitle: {
+                    if (root.galleryModel.mode === "explore") {
+                        switch (root.galleryModel.exploreSource) {
+                        case "bing":
+                            return "Bing · dailies 4K + archivo";
+                        case "wallhaven":
+                            return "Wallhaven · top UHD sin key";
+                        case "motionbgs":
+                            return "MotionBGS · vídeos HD/4K";
+                        default:
+                            return "Minimalista · flat art";
+                        }
+                    }
+                    return "Type to filter / Enter applies first / Esc closes";
+                }
                 status: root.galleryModel.status
                 statusColor: Theme.accent
             }
@@ -62,7 +76,7 @@ FloatingWindow {
                     color: Theme.controlFocusText
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.accentText
-                    text: root.galleryModel.query
+                    text: root.galleryModel.mode === "explore" ? root.galleryModel.exploreQuery : root.galleryModel.query
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.inputFontSize
                     clip: true
@@ -81,7 +95,7 @@ FloatingWindow {
                             event.accepted = true;
                         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             if (root.galleryModel.mode === "explore") {
-                                root.galleryModel.explore();
+                                root.galleryModel.searchExplore();
                             } else {
                                 const items = root.galleryModel.filteredItems();
 
@@ -122,7 +136,7 @@ FloatingWindow {
                     primary: root.galleryModel.mode === "explore"
                     onActivated: {
                         root.galleryModel.setMode("explore");
-                        root.galleryModel.explore();
+                        root.galleryModel.searchExplore();
                     }
                 }
 
@@ -139,54 +153,54 @@ FloatingWindow {
                         visible: root.galleryModel.mode === "explore"
                         label: modelData.label
                         primary: root.galleryModel.exploreSource === modelData.id
-                        onActivated: {
-                            root.galleryModel.exploreSource = modelData.id;
-                            root.galleryModel.explore();
-                        }
+                        onActivated: root.galleryModel.setSource(modelData.id)
                     }
                 }
 
                 ShellButton {
                     visible: root.galleryModel.mode === "explore"
-                    enabled: root.galleryModel.exploreSelected !== null
-                    label: "⬇ Instalar"
-                    primary: true
-                    onActivated: root.galleryModel.installSelected()
+                    label: "⟳"
+                    onActivated: root.galleryModel.searchExplore()
                 }
             }
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
+                visible: root.galleryModel.mode === "local"
 
                 Repeater {
                     model: [
-                        { id: "", label: "all" },
-                        { id: "scene", label: "scene" },
-                        { id: "video", label: "video" },
-                        { id: "image", label: "image" },
-                        { id: "web", label: "web" }
+                        { id: "", label: "Todo" },
+                        { id: "video", label: "Vídeo" },
+                        { id: "image", label: "Imagen" }
                     ]
 
                     delegate: ShellButton {
                         required property var modelData
-                        label: modelData.label
+                        label: modelData.label + " (" + root.galleryModel.typeCount(modelData.id) + ")"
                         primary: root.galleryModel.typeFilter === modelData.id
                         onActivated: root.galleryModel.setTypeFilter(modelData.id)
                     }
                 }
 
                 ShellButton {
-                    label: "★ favs"
+                    label: "★ (" + root.galleryModel.typeCount("fav") + ")"
                     primary: root.galleryModel.showFavorites
                     onActivated: root.galleryModel.toggleFavorites()
+                }
+
+                ShellButton {
+                    label: root.galleryModel.sortOrder === "" ? "A-Z" : (root.galleryModel.sortOrder === "az" ? "A-Z ↓" : "Z-A ↑")
+                    primary: root.galleryModel.sortOrder !== ""
+                    onActivated: root.galleryModel.toggleSort()
                 }
             }
 
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                visible: root.galleryModel.categories.length > 0
+                visible: root.galleryModel.mode === "local" && root.galleryModel.categories.length > 0
 
                 UiText {
                     text: "mood:"
@@ -204,6 +218,89 @@ FloatingWindow {
                 }
             }
 
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreSource === "motionbgs"
+
+                Repeater {
+                    model: [
+                        { id: "", label: "todo" },
+                        { id: "tag:anime", label: "anime" },
+                        { id: "tag:nature", label: "nature" },
+                        { id: "tag:gaming", label: "gaming" },
+                        { id: "tag:space", label: "space" }
+                    ]
+
+                    delegate: ShellButton {
+                        required property var modelData
+                        label: modelData.label
+                        primary: root.galleryModel.exploreQuery === modelData.id
+                        onActivated: {
+                            root.galleryModel.exploreQuery = modelData.id;
+                            root.galleryModel.searchExplore();
+                        }
+                    }
+                }
+
+                ShellButton {
+                    label: "HD"
+                    primary: root.galleryModel.exploreQuality === "hd"
+                    onActivated: root.galleryModel.exploreQuality = "hd"
+                }
+
+                ShellButton {
+                    label: "4K"
+                    primary: root.galleryModel.exploreQuality === "4k"
+                    onActivated: root.galleryModel.exploreQuality = "4k"
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreSource === "wallhaven"
+
+                Repeater {
+                    model: [
+                        { id: "toplist", label: "top" },
+                        { id: "hot", label: "hot" },
+                        { id: "random", label: "random" }
+                    ]
+
+                    delegate: ShellButton {
+                        required property var modelData
+                        label: modelData.label
+                        primary: root.galleryModel.wallhavenSort() === modelData.id
+                        onActivated: root.galleryModel.setWallhavenSort(modelData.id)
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreSource === "bing"
+
+                ShellButton {
+                    label: "recientes"
+                    primary: root.galleryModel.exploreQuery !== "archive" && root.galleryModel.exploreQuery.indexOf("archive") !== 0
+                    onActivated: {
+                        root.galleryModel.exploreQuery = "";
+                        root.galleryModel.searchExplore();
+                    }
+                }
+
+                ShellButton {
+                    label: "archivo"
+                    primary: root.galleryModel.exploreQuery === "archive" || root.galleryModel.exploreQuery.indexOf("archive") === 0
+                    onActivated: {
+                        root.galleryModel.exploreQuery = "archive";
+                        root.galleryModel.searchExplore();
+                    }
+                }
+            }
+
             GridView {
                 id: galleryGrid
 
@@ -211,7 +308,7 @@ FloatingWindow {
                 Layout.fillHeight: true
                 clip: true
                 cellWidth: 200
-                cellHeight: 160
+                cellHeight: 204
                 model: root.galleryModel.mode === "explore" ? root.galleryModel.filteredExplore() : root.galleryModel.filteredItems()
 
                 delegate: Column {
@@ -262,6 +359,16 @@ FloatingWindow {
 
                         UiText {
                             anchors.top: parent.top
+                            anchors.left: parent.left
+                            anchors.margins: 6
+                            visible: root.galleryModel.mode === "local" && root.galleryModel.currentId === modelData.id
+                            text: "ACTIVA"
+                            color: Theme.accent
+                            font.bold: true
+                        }
+
+                        UiText {
+                            anchors.top: parent.top
                             anchors.right: parent.right
                             anchors.margins: 6
                             visible: root.galleryModel.mode === "local" && (modelData.type || "") !== "image"
@@ -286,12 +393,112 @@ FloatingWindow {
                         elide: Text.ElideRight
                         text: (modelData.title || modelData.id) + ((modelData.valid === false) ? " (invalid)" : "")
                     }
+
+                    UiText {
+                        width: 190
+                        elide: Text.ElideRight
+                        color: Theme.menuMutedText
+                        text: {
+                            if (root.galleryModel.mode === "explore") {
+                                return (modelData.kind || "online") + " • " + root.galleryModel.exploreSource;
+                            }
+                            const t = modelData.type || "";
+                            const tl = t === "video" ? "Vídeo" : (t === "image" ? "Imagen" : t);
+                            const sz = modelData.size_h || "";
+                            return sz !== "" ? tl + " • " + sz : tl;
+                        }
+                    }
+
+                    ShellButton {
+                        visible: root.galleryModel.mode === "explore"
+                        enabled: root.galleryModel.downloadingRef === ""
+                        label: {
+                            if (root.galleryModel.downloadingRef === modelData.ref) {
+                                return "Instalando…";
+                            }
+                            if (root.galleryModel.installedLocalId(modelData.ref) !== "") {
+                                return "✓ Instalado (aplicar)";
+                            }
+                            return "⬇ Instalar";
+                        }
+                        primary: root.galleryModel.installedLocalId(modelData.ref) !== ""
+                        onActivated: root.galleryModel.installOrApply(modelData)
+                    }
                 }
 
                 UiText {
                     anchors.centerIn: parent
                     visible: galleryGrid.count === 0
                     text: "No wallpapers: run we-wallpaper refresh + gallery-json"
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreLoading
+
+                UiText {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "Buscando online…"
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: root.galleryModel.mode === "explore" && !root.galleryModel.exploreLoading && root.galleryModel.exploreError !== ""
+
+                UiText {
+                    text: root.galleryModel.exploreError
+                    color: Theme.accent
+                }
+
+                ShellButton {
+                    label: "Reintentar"
+                    primary: true
+                    onActivated: root.galleryModel.searchExplore()
+                }
+            }
+
+            UiText {
+                Layout.alignment: Qt.AlignHCenter
+                visible: root.galleryModel.mode === "explore" && !root.galleryModel.exploreLoading && root.galleryModel.exploreError === "" && root.galleryModel.exploreItems.length === 0
+                text: "Elige fuente, escribe o pulsa ⟳"
+                color: Theme.menuMutedText
+            }
+
+            ShellButton {
+                Layout.alignment: Qt.AlignHCenter
+                visible: {
+                    if (root.galleryModel.mode !== "explore" || root.galleryModel.exploreLoading || root.galleryModel.exploreError !== "") {
+                        return false;
+                    }
+                    if (root.galleryModel.exploreItems.length === 0) {
+                        return false;
+                    }
+                    if (root.galleryModel.exploreSource === "bing") {
+                        const q = root.galleryModel.exploreQuery;
+                        return q === "" || q === "archive" || q.indexOf("archive") === 0;
+                    }
+                    if (root.galleryModel.exploreSource === "wallhaven" && root.galleryModel.wallhavenSort() === "random") {
+                        return false;
+                    }
+                    return true;
+                }
+                label: "Cargar más ↓"
+                onActivated: {
+                    if (root.galleryModel.exploreSource === "bing") {
+                        const q = root.galleryModel.exploreQuery;
+                        if (q === "" || q === "archive" || q.indexOf("archive") === 0) {
+                            const m = q.match(/archive(\d+)/);
+                            const n = m ? parseInt(m[1], 10) + 1 : 2;
+                            root.galleryModel.exploreQuery = "archive" + n;
+                            root.galleryModel.explore();
+                        }
+                        return;
+                    }
+                    root.galleryModel.exploreMore();
                 }
             }
 

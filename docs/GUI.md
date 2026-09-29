@@ -35,12 +35,21 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
   chip `★ favs` en la galería.
 * `tags <id> [tag...]`: edita tags del `project.json` (+ refresh).
   La galería indexa `id+title+description+tags` y filtra por categorías
-  (anime/nature/sci-fi/cyberpunk/gaming/minimalist) vía chips.
-* `catalog bing|wallhaven [query]` + `catalog-get <ref> [id]`
-  (motionbgs sin API pública: pendiente; wallhaven sin key = últimos
-  públicos). Pestaña Explorar con thumbs remotos (`Image.async` +
-  placeholder): escribir filtra las tarjetas cargadas, Enter busca
-  online; click selecciona y `⬇ Instalar` descarga (vídeo→WE_DIR con
+  (anime/nature/sci-fi/cyberpunk/gaming/minimalist) vía chips (solo Local).
+* Local rediseñado (ideas de Aura, clean-room): filtros con contadores
+  `Todo (n) · Vídeo (n) · Imagen (n) · ★ (n)` + orden A-Z; cards con meta
+  (`Vídeo • 12 MB`) y badge `ACTIVA` (vía `current-id`); empty state con
+  "ver todo". `mood:` queda como segunda fila solo en Local.
+* Explorar rediseñado: subtítulo por fuente; filtros contextuales
+  (motion: tags + HD/4K; wallhaven: top/hot/random; bing:
+  recientes/archivo); botón por tarjeta que muta
+  `[Instalar] → [Instalando…] → [✓ Instalado]` (click en instalado =
+  aplicar); error con Reintentar; `Cargar más` (motion/wallhaven pág.2,
+  minimal amplía límite, bing avanza archiveN).
+* `catalog <src> [query] [page]` + `catalog-get <ref> [id|4k]`
+  (wallhaven sin key = últimos públicos). Pestaña Explorar con thumbs
+  remotos (`Image.async` + placeholder): escribir filtra las tarjetas
+  cargadas, Enter busca online; instalar descarga (vídeo→WE_DIR con
   `project.json`, imagen→`backgrounds-lab`) + refresh a Local.
 * Tipo `image` (`img-<stem>`): las estáticas de `backgrounds-lab` salen
   en Local con chip `image`, thumb directo y sin estrella/props;

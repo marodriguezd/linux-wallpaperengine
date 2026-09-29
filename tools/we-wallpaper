@@ -694,10 +694,18 @@ status() {
     fi
 }
 
+# Rediseño estilo Aura: id aplicado actual (badge ACTIVA en galería).
+current_id() {
+    [ -f "$STATE_FILE" ] || return 1
+    grep -E "^WALLPAPER_ID=" "$STATE_FILE" 2>/dev/null | cut -d= -f2
+}
+
 # Fase GUI-super: catálogos web estilo Aura (solo APIs oficiales JSON).
 # TSV: ref|title|thumb|file|kind  (ref = fuente:id, listo para catalog-get)
 catalog() {
-    local src="${1:-}" query="${2:-}"
+    local src="${1:-}" query="${2:-}" page="${3:-1}"
+    [[ "$page" =~ ^[0-9]+$ ]] || page=1
+    [ "$page" -lt 1 ] && page=1
     case "$src" in
 	bing)
 	    # Formato estilo Aura (GPL-3): thumb con pid+resize (el _480x270
@@ -752,10 +760,16 @@ for img in data.get('images', []):
 		&& key=$(grep -E "^wallhaven=" "${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/keys.conf" 2>/dev/null | cut -d= -f2)
 	    [ -z "$key" ] && key="${WALLHAVEN_KEY:-}"
 	    [ -n "$key" ] && key_args=(-H "Authorization: $key")
-	    local q="${query:-nature}"
+	    local q="$query" sort="toplist"
+	    if [[ "$q" == *sort:* ]]; then
+		sort=$(echo "$q" | grep -oE 'sort:[a-z]+' | head -n 1 | cut -d: -f2)
+		q=$(echo "$q" | sed -E 's/sort:[a-z]+//g' | xargs)
+	    fi
+	    [ -z "$q" ] && q="nature"
 	    curl -fsSL -m 25 -G "https://wallhaven.cc/api/v1/search" \
 		--data-urlencode "q=$q" --data-urlencode "purity=100" \
-		--data-urlencode "sorting=toplist" "${key_args[@]}" 2>/dev/null \
+		--data-urlencode "sorting=$sort" --data-urlencode "page=$page" \
+		"${key_args[@]}" 2>/dev/null \
 		| python3 -c "
 import json, sys
 try:
@@ -773,15 +787,19 @@ for w in data.get('data', [])[:24]:
 	    # Sin API pública: scraping HTML con UA de navegador, reimplementado
 	    # desde cero a partir del comportamiento de Aura (GPL-3, ver docs).
 	    # query vacía = portada; tag:xxx = tag; texto = búsqueda.
-	    MB_Q="$query" python3 -c "
+	    MB_Q="$query" MB_PAGE="$page" python3 -c "
 import html as H, os, re, sys, urllib.parse, urllib.request
 q = os.environ.get('MB_Q', '').strip()
+pg = max(int(os.environ.get('MB_PAGE', '1') or 1), 1)
 if q.lower().startswith('tag:'):
-    url = 'https://motionbgs.com/tag:%s/' % q[4:].strip().lower()
+    tag = q[4:].strip().lower()
+    url = 'https://motionbgs.com/tag:%s/%d/' % (tag, pg) if pg > 1 else 'https://motionbgs.com/tag:%s/' % tag
 elif q:
     url = 'https://motionbgs.com/search?q=%s' % urllib.parse.quote_plus(q)
+    if pg > 1:
+        url += '&page=%d' % pg
 else:
-    url = 'https://motionbgs.com/'
+    url = 'https://motionbgs.com/%d/' % pg if pg > 1 else 'https://motionbgs.com/'
 req = urllib.request.Request(url, headers={
     'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0',
     'Accept-Language': 'en-US,en;q=0.5', 'Referer': 'https://motionbgs.com/'})
@@ -836,9 +854,10 @@ if n == 0:
 		    -o "$cf.tmp" 2>/dev/null && mv "$cf.tmp" "$cf" || rm -f "$cf.tmp"
 	    fi
 	    [ -f "$cf" ] || { echo "minimal: sin catálogo (¿red?)"; return 1; }
-	    MB_Q="$query" MB_CF="$cf" python3 -c "
+	    MB_Q="$query" MB_CF="$cf" MB_LIMIT="${MB_LIMIT:-24}" python3 -c "
 import json, os, sys, urllib.parse
 q = os.environ.get('MB_Q', '').strip().lower()
+limit = max(int(os.environ.get('MB_LIMIT', '24') or 24), 1)
 try:
     entries = json.load(open(os.environ['MB_CF']))
 except Exception:
@@ -869,7 +888,7 @@ for e in entries:
     print('minimal:%s|%s (%s) [%s]|%s|%s|image' % (
         name, title.replace('|', '/'), author.replace('|', '/'), res, thumb, durl))
     n += 1
-    if n >= 24:
+    if n >= limit:
         break
 if n == 0:
     sys.exit('minimal: sin resultados')
@@ -925,7 +944,7 @@ for img in data.get('data', []):
 		fi
 	    fi
 	    [ -n "$file" ] || { echo "No encontrado en Bing: $key (prueba 'catalog bing archive')"; return 1; }
-	    fetch_url "$file" "$id"
+	    fetch_url "$file" "${id:-bing-$key}"
 	    ;;
 	wallhaven)
 	    local detail
@@ -1057,6 +1076,26 @@ gallery_json() {
     mkdir -p "$(dirname "$out")" || return 1
     CACHE_FILE="$CACHE_FILE" THUMBS_DIR="$THUMBS_DIR" OUT="$out" python3 -c "
 import json, os
+def hum(n):
+    for u in ('B', 'KB', 'MB', 'GB'):
+        if n < 1024 or u == 'GB':
+            return ('%d %s' % (n, u)) if u == 'B' else ('%.1f %s' % (n, u))
+        n /= 1024.0
+def fsize(p):
+    try:
+        if os.path.isfile(p):
+            return os.path.getsize(p)
+        if os.path.isdir(p):
+            tot = 0
+            for f in os.listdir(p):
+                fp = os.path.join(p, f)
+                if os.path.isfile(fp) and not f.endswith('.json'):
+                    s = os.path.getsize(fp)
+                    tot = max(tot, s)
+            return tot
+    except OSError:
+        pass
+    return 0
 cache = json.load(open(os.environ['CACHE_FILE']))
 thumbs = os.environ['THUMBS_DIR']
 items = []
@@ -1078,6 +1117,7 @@ for it in cache.get('items', []):
         'tags': it.get('tags', []),
         'path': it.get('path', ''),
         'thumb': tp,
+        'size_h': hum(fsize(it.get('path', ''))),
     })
 lab = os.path.join(os.path.expanduser('~'), 'Pictures', 'backgrounds-lab')
 if os.path.isdir(lab):
@@ -1246,6 +1286,7 @@ fetch_url() {
 	    local -a dl=(curl -fSL --retry 2)
 	    [ -n "${WE_FETCH_UA:-}" ] && dl+=(--user-agent "$WE_FETCH_UA")
 	    [ -n "${WE_FETCH_REFERER:-}" ] && dl+=(--referer "$WE_FETCH_REFERER")
+	    [ -n "${WE_FETCH_PROGRESS:-}" ] && dl+=(--progress-bar)
 	    "${dl[@]}" -o "$1" "$2"
 	else
 	    wget -O "$1" "$2"
@@ -1289,7 +1330,7 @@ usage() {
     echo "  gallery-json                          Volcar JSON para galería quickshell"
     echo "  apply-id <id> [modo]                  Aplicar por id (para clicks)"
     echo "  fetch <url> [id]                      Descargar video/imagen web"
-    echo "  catalog <src> [query]               Explorar bing|wallhaven|motionbgs|minimal"
+    echo "  catalog <src> [query] [page]        Explorar bing|wallhaven|motionbgs|minimal"
     echo "  catalog-get <ref> [id|4k]           Descargar ref (usa fetch)"
     echo "  import <fich> [id] [--title ..]       Importar vídeo local a WE_DIR"
     echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
@@ -1368,7 +1409,7 @@ EOF
     gallery-json) gallery_json ;;
     apply-id)   apply_id "$2" "$3" ;;
     fetch)      fetch_url "$2" "$3" ;;
-    catalog)    catalog "$2" "$3" ;;
+    catalog)    catalog "$2" "$3" "$4" ;;
     catalog-get) catalog_get "$2" "$3" ;;
     import)     import_video "$2" "$3" "$4" "$5" ;;
     switch)     switch_wallpaper "$2" ;;
@@ -1383,5 +1424,6 @@ EOF
     restore)    restore_wallpaper ;;
     stop)       stop_wallpaper ;;
     status)     status ;;
+    current-id) current_id ;;
     *)          usage ;;
 esac

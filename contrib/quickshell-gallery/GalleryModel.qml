@@ -22,6 +22,13 @@ Scope {
     property string exploreQuery: ""
     property var exploreSelected: null
     property string status: ""
+    property string currentId: ""
+    property string sortOrder: ""
+    property bool exploreLoading: false
+    property string exploreError: ""
+    property string downloadingRef: ""
+    property string exploreQuality: "hd"
+    property int explorePage: 1
     property string selectedId: ""
     property var props: []
     property var pendingEdits: ({})
@@ -88,7 +95,49 @@ Scope {
             out.push(item);
         }
 
+        if (root.sortOrder === "az" || root.sortOrder === "za") {
+            out.sort(function(a, b) {
+                const ta = ((a.title || a.id || "") + "").toLowerCase();
+                const tb = ((b.title || b.id || "") + "").toLowerCase();
+                if (ta < tb) {
+                    return root.sortOrder === "az" ? -1 : 1;
+                }
+                if (ta > tb) {
+                    return root.sortOrder === "az" ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+
         return out;
+    }
+
+    function toggleSort() : void {
+        root.sortOrder = root.sortOrder === "az" ? "za" : (root.sortOrder === "za" ? "" : "az");
+    }
+
+    function typeCount(t : string) : int {
+        if (t === "fav") {
+            let n = 0;
+            for (let i = 0; i < root.items.length; i++) {
+                if (root.items[i] && root.items[i].favorite) {
+                    n++;
+                }
+            }
+            return n;
+        }
+
+        if (t === "") {
+            return root.items.length;
+        }
+
+        let n = 0;
+        for (let i = 0; i < root.items.length; i++) {
+            if (root.items[i] && (root.items[i].type || "") === t) {
+                n++;
+            }
+        }
+        return n;
     }
 
     function setMode(m : string) : void {
@@ -97,9 +146,91 @@ Scope {
 
     function explore() : void {
         root.exploreSelected = null;
+        root.exploreError = "";
+        root.exploreLoading = true;
         root.status = "buscando online...";
-        exploreProcess.command = ["we-wallpaper", "catalog", root.exploreSource, root.exploreQuery];
+        const args = ["we-wallpaper", "catalog", root.exploreSource, root.exploreQuery];
+        if (root.exploreSource === "motionbgs" || root.exploreSource === "wallhaven" || root.exploreSource === "minimal") {
+            args.push(String(root.explorePage));
+        }
+        exploreProcess.command = args;
         exploreProcess.running = true;
+    }
+
+    function exploreMore() : void {
+        root.explorePage += 1;
+        explore();
+    }
+
+    function searchExplore() : void {
+        root.explorePage = 1;
+        root.exploreItems = [];
+        explore();
+    }
+
+    function setSource(s : string) : void {
+        root.exploreSource = s;
+        root.explorePage = 1;
+        root.exploreItems = [];
+        explore();
+    }
+
+    function setWallhavenSort(s : string) : void {
+        const parts = root.exploreQuery.split(/\s+/).filter(function(p) {
+            return p !== "" && p.indexOf("sort:") !== 0;
+        });
+        parts.unshift("sort:" + s);
+        root.exploreQuery = parts.join(" ");
+        searchExplore();
+    }
+
+    function wallhavenSort() : string {
+        const m = root.exploreQuery.match(/sort:([a-z]+)/);
+        return m ? m[1] : "toplist";
+    }
+
+    function installedLocalId(ref : string) : string {
+        if (!ref) {
+            return "";
+        }
+        const ci = ref.indexOf(":");
+        if (ci === -1) {
+            return "";
+        }
+        const src = ref.slice(0, ci);
+        const key = ref.slice(ci + 1).toLowerCase();
+        for (let i = 0; i < root.items.length; i++) {
+            const it = root.items[i];
+            if (!it || !it.id) {
+                continue;
+            }
+            const lid = String(it.id);
+            if (src === "motionbgs" && lid.toLowerCase().indexOf("motionbgs-" + key + "-") === 0) {
+                return lid;
+            }
+            if ((src === "wallhaven" || src === "minimal" || src === "bing") && (it.type || "") === "image") {
+                const stem = key.split(".")[0];
+                if (stem.length >= 4 && lid.toLowerCase().indexOf(stem.slice(0, 12)) !== -1) {
+                    return lid;
+                }
+                if (src === "bing" && lid.toLowerCase() === "img-bing-" + key) {
+                    return lid;
+                }
+            }
+        }
+        return "";
+    }
+
+    function installOrApply(item : var) : void {
+        if (!item || !item.ref) {
+            return;
+        }
+        const lid = installedLocalId(item.ref);
+        if (lid !== "") {
+            apply({ id: lid });
+            return;
+        }
+        download(item);
     }
 
     function filteredExplore() : var {
@@ -127,18 +258,19 @@ Scope {
         root.status = (item && item.title) ? item.title : "";
     }
 
-    function installSelected() : void {
-        if (root.exploreSelected) {
-            download(root.exploreSelected);
-        }
-    }
-
     function download(item : var) : void {
-        if (!item || !item.ref) {
+        if (!item || !item.ref || root.downloadingRef !== "") {
             return;
         }
 
-        downloadProcess.command = ["we-wallpaper", "catalog-get", item.ref];
+        root.downloadingRef = item.ref;
+        root.status = "instalando " + (item.title || item.ref) + "...";
+        const src = item.ref.split(":")[0];
+        const args = ["we-wallpaper", "catalog-get", item.ref];
+        if (src === "motionbgs") {
+            args.push(root.exploreQuality);
+        }
+        downloadProcess.command = args;
         downloadProcess.running = true;
     }
 
@@ -259,6 +391,7 @@ Scope {
 
     function refresh() : void {
         refreshProcess.running = true;
+        currentProcess.running = true;
     }
 
     FileView {
@@ -279,7 +412,20 @@ Scope {
         id: applyProcess
         running: false
         stdout: StdioCollector {
-            onStreamFinished: root.status = this.text
+            onStreamFinished: {
+                root.status = this.text;
+                currentProcess.running = true;
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: currentProcess
+        command: ["we-wallpaper", "current-id"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.currentId = this.text.trim()
         }
         stderr: StdioCollector {}
     }
@@ -376,8 +522,23 @@ Scope {
                     });
                 }
 
-                root.exploreItems = rows;
-                root.status = rows.length + " online";
+                root.exploreLoading = false;
+                if (rows.length === 0) {
+                    if (root.explorePage <= 1) {
+                        root.exploreItems = [];
+                    }
+                    root.exploreError = "Sin resultados o red fallida. Reintenta.";
+                    root.status = "explore: sin resultados";
+                    return;
+                }
+
+                root.exploreError = "";
+                if (root.explorePage > 1) {
+                    root.exploreItems = root.exploreItems.concat(rows);
+                } else {
+                    root.exploreItems = rows;
+                }
+                root.status = root.exploreItems.length + " online";
             }
         }
         stderr: StdioCollector {}
@@ -388,6 +549,7 @@ Scope {
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
+                root.downloadingRef = "";
                 root.status = this.text;
                 refreshProcess.running = true;
             }
