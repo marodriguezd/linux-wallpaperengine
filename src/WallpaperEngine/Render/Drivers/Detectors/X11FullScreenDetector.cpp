@@ -72,6 +72,7 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	unsigned int num_children;
 
 	if (!XQueryTree (this->m_display, ourWindow, &root, &parentWindow, &schildren, &num_children)) {
+	    XFree (children);
 	    return false;
 	}
 

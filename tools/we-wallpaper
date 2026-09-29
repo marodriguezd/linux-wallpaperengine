@@ -16,8 +16,15 @@ STATE_FILE="$STATE_DIR/state.conf"
 
 detect_backend() {
     if [ -n "${WE_BACKEND:-}" ]; then
-	echo "$WE_BACKEND"
-	return 0
+	case "$WE_BACKEND" in
+	    sway|x11)
+		echo "$WE_BACKEND"
+		return 0
+		;;
+	    *)
+		echo "we-wallpaper: WE_BACKEND='$WE_BACKEND' no válido (usa sway|x11), autodetectando" >&2
+		;;
+	esac
     fi
     if command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_outputs >/dev/null 2>&1; then
 	echo "sway"
@@ -40,6 +47,7 @@ APPLY_TYPE=$apply_type
 BACKEND=$(detect_backend)
 WE_PROFILE=${WE_PROFILE:-}
 WE_FPS_BATTERY=${WE_FPS_BATTERY:-}
+WE_PAUSE_ON_BATTERY=${WE_PAUSE_ON_BATTERY:-}
 EOF
 }
 
@@ -47,7 +55,7 @@ load_state() {
     if [ -f "$STATE_FILE" ]; then
 	# shellcheck disable=SC1090
 	source "$STATE_FILE"
-	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}"
+	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}|${WE_PAUSE_ON_BATTERY:-}"
     fi
 }
 
@@ -62,8 +70,9 @@ else:
     print(60)
 " 2>/dev/null || echo 60
     else
-	xrandr 2>/dev/null | awk '/\*/{gsub(/[^0-9.]/,"",$1); split($1,a,"."); print a[1]; exit}' \
-	    || echo 60
+	local rate
+	rate=$(xrandr 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i ~ /\*/) {gsub (/[^0-9.]/, "", $i); split ($i, a, "."); print a[1]; exit}}')
+	echo "${rate:-60}"
     fi
 }
 
@@ -129,7 +138,15 @@ apply_wallpaper() {
 	[ -n "$arg" ] && fork_args+=("$arg")
     done < <(fork_flags)
 
-    local flags=(--fps "$fps" --scaling fill --silent)
+    # Precedencia fps: WE_FPS explícito > fps del --profile > refresco auto.
+    # (argparse aplica en orden: --profile va en fork_args antes que flags,
+    # así que un --fps aquí pisaría el preset; por eso se omite con perfil)
+    local flags=(--scaling fill --silent)
+    if [ -n "${WE_FPS:-}" ]; then
+	flags+=(--fps "$WE_FPS")
+    elif [ -z "${WE_PROFILE:-}" ]; then
+	flags+=(--fps "$fps")
+    fi
     case "$mode" in
 	lite)
 	    flags+=(--disable-particles --disable-mouse --disable-parallax --no-audio-processing)
@@ -168,7 +185,15 @@ apply_all() {
 	[ -n "$arg" ] && fork_args+=("$arg")
     done < <(fork_flags)
 
-    local flags=(--fps "$fps" --scaling fill --silent)
+    # Precedencia fps: WE_FPS explícito > fps del --profile > refresco auto.
+    # (argparse aplica en orden: --profile va en fork_args antes que flags,
+    # así que un --fps aquí pisaría el preset; por eso se omite con perfil)
+    local flags=(--scaling fill --silent)
+    if [ -n "${WE_FPS:-}" ]; then
+	flags+=(--fps "$WE_FPS")
+    elif [ -z "${WE_PROFILE:-}" ]; then
+	flags+=(--fps "$fps")
+    fi
     case "$mode" in
 	lite)
 	    flags+=(--disable-particles --disable-mouse --disable-parallax --no-audio-processing)
@@ -257,11 +282,13 @@ restore_wallpaper() {
     apply_type=$(echo "$state" | cut -d'|' -f4)
     saved_profile=$(echo "$state" | cut -d'|' -f6)
     saved_fps=$(echo "$state" | cut -d'|' -f7)
+    saved_pob=$(echo "$state" | cut -d'|' -f8)
 
     # respeta lo guardado salvo override por entorno actual
     [ -z "${WE_PROFILE:-}" ] && WE_PROFILE="$saved_profile"
     [ -z "${WE_FPS_BATTERY:-}" ] && WE_FPS_BATTERY="$saved_fps"
-    export WE_PROFILE WE_FPS_BATTERY
+    [ -z "${WE_PAUSE_ON_BATTERY:-}" ] && WE_PAUSE_ON_BATTERY="$saved_pob"
+    export WE_PROFILE WE_FPS_BATTERY WE_PAUSE_ON_BATTERY
 
     # Warn about video wallpapers (they work via nvdec-copy despite Vulkan warnings)
     if is_video_wallpaper "$id"; then
@@ -299,7 +326,8 @@ usage() {
     echo ""
     echo "Modos: normal (default), lite, no-particles"
     echo "Env fork: WE_BACKEND=sway|x11  WE_PROFILE=lite|balanced|full"
-    echo "          WE_FPS_BATTERY=N (0=pausar)  WE_PAUSE_ON_BATTERY=1"
+    echo "          WE_FPS=N (gana a todo)  WE_FPS_BATTERY=N (0=pausar)"
+    echo "          WE_PAUSE_ON_BATTERY=1"
     echo "Refresh detectado: ${fps}Hz"
 }
 

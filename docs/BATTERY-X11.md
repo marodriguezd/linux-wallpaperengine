@@ -42,4 +42,7 @@ Ejemplo diario DWM (eDP-1, batería):
 WE_PROFILE=lite WE_FPS_BATTERY=10 tools/we-wallpaper apply desktophut-sanyo lite eDP-1
 ```
 
+Precedencia de FPS en el helper: `WE_FPS` explícito > fps del `--profile` >
+refresco auto de xrandr/swaymsg (sin perfil se usa el refresco detectado).
+
 Seguir upstream: `git fetch upstream && git rebase upstream/main`.

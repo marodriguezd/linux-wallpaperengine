@@ -862,7 +862,14 @@ void WallpaperApplication::render () {
 	const bool fullscreen = this->m_fullScreenDetector->anythingFullscreen ();
 	const bool batteryPause = this->refreshBatteryState ();
 
-	if ((this->m_pausedForFullscreen && fullscreen) || (this->m_pausedForBattery && batteryPause)) {
+	// either trigger alone must hold the pause: refresh the reason so a
+	// fullscreen->battery (or reverse) handover resumes zero frames.
+	// m_pauseStart is kept from the original entry so playlist timers
+	// account for the whole paused span on resume.
+	if (fullscreen || batteryPause) {
+	    this->m_pausedForFullscreen = fullscreen;
+	    this->m_pausedForBattery = batteryPause;
+
 	    if (this->m_context.state.general.keepRunning) {
 		return;
 	    }
