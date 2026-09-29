@@ -1,6 +1,7 @@
 #include "X11FullScreenDetector.h"
 #include "WallpaperEngine/Logging/Log.h"
 
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/Xrandr.h>
 
@@ -75,7 +76,7 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	}
 
 	if (schildren) {
-	    XFree (children);
+	    XFree (schildren);
 	}
     }
 
@@ -93,7 +94,14 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 	    continue;
 	}
 
-	// compare width and height with the different screens we have
+	// authoritative EWMH check first: real fullscreen clients advertise it,
+	// geometry alone also matches maximized/tiled windows (e.g. DWM monocle)
+	if (this->hasFullscreenState (children[i])) {
+	    isFullscreen = true;
+	    break;
+	}
+
+	// fallback: compare width and height with the different screens we have
 	for (const auto& [name, viewport] : this->m_screens) {
 	    if (attribs.x == viewport.x && attribs.y == viewport.y && attribs.width == viewport.z
 		&& attribs.height == viewport.w) {
@@ -113,6 +121,43 @@ void X11FullScreenDetector::reset () {
     this->initialize ();
 }
 
+bool X11FullScreenDetector::hasFullscreenState (Window window) const {
+    if (this->m_netWmState == None || this->m_netWmStateFullscreen == None) {
+	return false;
+    }
+
+    Atom actualType = None;
+    int actualFormat = 0;
+    unsigned long nitems = 0;
+    unsigned long bytesAfter = 0;
+    unsigned char* prop = nullptr;
+
+    if (XGetWindowProperty (
+	    this->m_display, window, this->m_netWmState, 0, 32, False, XA_ATOM, &actualType, &actualFormat, &nitems,
+	    &bytesAfter, &prop
+	)
+	!= Success) {
+	return false;
+    }
+
+    bool fullscreen = false;
+
+    if (prop != nullptr) {
+	const auto* atoms = reinterpret_cast<Atom*> (prop);
+
+	for (unsigned long i = 0; i < nitems; i++) {
+	    if (atoms[i] == this->m_netWmStateFullscreen) {
+		fullscreen = true;
+		break;
+	    }
+	}
+
+	XFree (prop);
+    }
+
+    return fullscreen;
+}
+
 void X11FullScreenDetector::initialize () {
     this->m_display = XOpenDisplay (nullptr);
 
@@ -129,6 +174,8 @@ void X11FullScreenDetector::initialize () {
     }
 
     this->m_root = DefaultRootWindow (this->m_display);
+    this->m_netWmState = XInternAtom (this->m_display, "_NET_WM_STATE", False);
+    this->m_netWmStateFullscreen = XInternAtom (this->m_display, "_NET_WM_STATE_FULLSCREEN", False);
     XRRScreenResources* screenResources = XRRGetScreenResources (this->m_display, this->m_root);
 
     if (screenResources == nullptr) {

@@ -1,0 +1,314 @@
+#!/bin/bash
+# we-wallpaper (fork): helper para linux-wallpaperengine en Sway (Wayland) y X11 (DWM)
+#
+# Novedades del fork:
+#   - backend auto: swaymsg si hay Wayland/Sway, xrandr si hay X11
+#   - WE_PROFILE= lite|balanced|full -> --profile (va antes de los flags para que
+#     los flags explícitos ganen, según orden de argparse)
+#   - WE_FPS_BATTERY=N -> --fps-battery N (0 = pausar en batería)
+#   - WE_PAUSE_ON_BATTERY=1 -> --pause-on-battery
+
+WE_DIR="$HOME/.local/share/Steam/steamapps/workshop/content/431960"
+ASSETS_DIR="$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets"
+ENGINE="linux-wallpaperengine"
+STATE_DIR="$HOME/.config/we-wallpaper"
+STATE_FILE="$STATE_DIR/state.conf"
+
+detect_backend() {
+    if [ -n "${WE_BACKEND:-}" ]; then
+	echo "$WE_BACKEND"
+	return 0
+    fi
+    if command -v swaymsg >/dev/null 2>&1 && swaymsg -t get_outputs >/dev/null 2>&1; then
+	echo "sway"
+    elif [ -n "${DISPLAY:-}" ] && command -v xrandr >/dev/null 2>&1 \
+	&& xrandr --listmonitors >/dev/null 2>&1; then
+	echo "x11"
+    else
+	echo "unknown"
+    fi
+}
+
+save_state() {
+    local id="$1" mode="$2" screen="$3" apply_type="${4:-single}"
+    mkdir -p "$STATE_DIR"
+    cat > "$STATE_FILE" << EOF
+WALLPAPER_ID=$id
+MODE=$mode
+SCREEN=$screen
+APPLY_TYPE=$apply_type
+BACKEND=$(detect_backend)
+WE_PROFILE=${WE_PROFILE:-}
+WE_FPS_BATTERY=${WE_FPS_BATTERY:-}
+EOF
+}
+
+load_state() {
+    if [ -f "$STATE_FILE" ]; then
+	# shellcheck disable=SC1090
+	source "$STATE_FILE"
+	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}"
+    fi
+}
+
+get_refresh_rate() {
+    if [ "$(detect_backend)" = "sway" ]; then
+	swaymsg -t get_outputs 2>/dev/null | python3 -c "
+import json,sys
+outputs = json.load(sys.stdin)
+if outputs:
+    print(int(outputs[0]['current_mode']['refresh'] / 1000))
+else:
+    print(60)
+" 2>/dev/null || echo 60
+    else
+	xrandr 2>/dev/null | awk '/\*/{gsub(/[^0-9.]/,"",$1); split($1,a,"."); print a[1]; exit}' \
+	    || echo 60
+    fi
+}
+
+get_primary_screen() {
+    if [ "$(detect_backend)" = "sway" ]; then
+	swaymsg -t get_outputs 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['name'])" 2>/dev/null || echo "eDP-1"
+    else
+	xrandr --listmonitors 2>/dev/null | awk '/\*/{print $NF; exit}' || echo "eDP-1"
+    fi
+}
+
+get_all_screens() {
+    if [ "$(detect_backend)" = "sway" ]; then
+	swaymsg -t get_outputs 2>/dev/null | python3 -c "import json,sys; [print(o['name']) for o in json.load(sys.stdin)]" 2>/dev/null
+    else
+	xrandr --listmonitors 2>/dev/null | tail -n +2 | awk '{print $NF}'
+    fi
+}
+
+# Flags del fork: --profile y batería van PRIMERO para que los flags
+# explícitos (--disable-*, --fps) ganen por orden de argparse
+fork_flags() {
+    if [ -n "${WE_PROFILE:-}" ]; then
+	printf '%s\n' "--profile" "$WE_PROFILE"
+    fi
+    if [ "${WE_PAUSE_ON_BATTERY:-}" = "1" ]; then
+	printf '%s\n' "--pause-on-battery"
+    elif [ -n "${WE_FPS_BATTERY:-}" ]; then
+	printf '%s\n' "--fps-battery" "$WE_FPS_BATTERY"
+    fi
+}
+
+list_wallpapers() {
+    echo "=== Wallpapers disponibles [backend: $(detect_backend)] ==="
+    for dir in "$WE_DIR"/*/; do
+	id=$(basename "$dir")
+	name=""
+	type=""
+	if [ -f "$dir/project.json" ]; then
+	    name=$(python3 -c "import json; d=json.load(open('$dir/project.json')); print(d.get('title', 'Sin titulo'))" 2>/dev/null)
+	    type=$(python3 -c "import json; d=json.load(open('$dir/project.json')); print(d.get('type', 'unknown'))" 2>/dev/null)
+	fi
+	printf "%-12s %-6s %s\n" "$id" "[$type]" "${name:-Sin titulo}"
+    done
+}
+
+apply_wallpaper() {
+    local wallpaper_id="$1"
+    local mode="${2:-normal}"
+    local screen="${3:-$(get_primary_screen)}"
+    local fps=$(get_refresh_rate)
+
+    if [ ! -d "$WE_DIR/$wallpaper_id" ]; then
+	echo "Error: Wallpaper '$wallpaper_id' no encontrado"
+	echo "Usa 'we-wallpaper list' para ver disponibles"
+	return 1
+    fi
+
+    killall "$ENGINE" 2>/dev/null
+
+    local fork_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && fork_args+=("$arg")
+    done < <(fork_flags)
+
+    local flags=(--fps "$fps" --scaling fill --silent)
+    case "$mode" in
+	lite)
+	    flags+=(--disable-particles --disable-mouse --disable-parallax --no-audio-processing)
+	    ;;
+	no-particles)
+	    flags+=(--disable-particles)
+	    ;;
+    esac
+
+    # shellcheck disable=SC2086
+    XCURSOR_THEME=${XCURSOR_THEME:-Banana} XCURSOR_SIZE=${XCURSOR_SIZE:-30} nohup $ENGINE \
+	--screen-root "$screen" \
+	--bg "$wallpaper_id" \
+	"${fork_args[@]}" \
+	"${flags[@]}" \
+	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+
+    echo "Wallpaper $wallpaper_id en $screen @ ${fps}Hz (modo: $mode, backend: $(detect_backend))"
+    save_state "$wallpaper_id" "$mode" "$screen" "single"
+}
+
+apply_all() {
+    local wallpaper_id="$1"
+    local mode="${2:-normal}"
+    local fps=$(get_refresh_rate)
+
+    if [ ! -d "$WE_DIR/$wallpaper_id" ]; then
+	echo "Error: Wallpaper '$wallpaper_id' no encontrado"
+	return 1
+    fi
+
+    killall "$ENGINE" 2>/dev/null
+
+    local fork_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && fork_args+=("$arg")
+    done < <(fork_flags)
+
+    local flags=(--fps "$fps" --scaling fill --silent)
+    case "$mode" in
+	lite)
+	    flags+=(--disable-particles --disable-mouse --disable-parallax --no-audio-processing)
+	    ;;
+	no-particles)
+	    flags+=(--disable-particles)
+	    ;;
+    esac
+
+    while IFS= read -r screen; do
+	# shellcheck disable=SC2086
+	XCURSOR_THEME=${XCURSOR_THEME:-Banana} XCURSOR_SIZE=${XCURSOR_SIZE:-30} nohup $ENGINE \
+	    --screen-root "$screen" \
+	    --bg "$wallpaper_id" \
+	    "${fork_args[@]}" \
+	    "${flags[@]}" \
+	    --assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+    done < <(get_all_screens)
+
+    echo "Wallpaper $wallpaper_id en todos los monitores @ ${fps}Hz (modo: $mode)"
+    save_state "$wallpaper_id" "$mode" "" "all"
+}
+
+stop_wallpaper() {
+    killall "$ENGINE" 2>/dev/null && echo "Wallpaper detenido" || echo "No hay wallpaper activo"
+}
+
+wait_for_backend() {
+    local max_attempts=30
+    local attempt=0
+    local backend=$(detect_backend)
+
+    if [ "$backend" = "sway" ]; then
+	[ -z "$SWAYSOCK" ] && export SWAYSOCK=$(ls -1 /run/user/"$(id -u)"/sway-ipc.*.sock 2>/dev/null | head -n 1)
+	[ -z "$WAYLAND_DISPLAY" ] && export WAYLAND_DISPLAY="wayland-0"
+	while [ $attempt -lt $max_attempts ]; do
+	    if swaymsg -t get_outputs >/dev/null 2>&1; then
+		return 0
+	    fi
+	    attempt=$((attempt + 1))
+	    sleep 1
+	done
+    elif [ "$backend" = "x11" ]; then
+	while [ $attempt -lt $max_attempts ]; do
+	    if xrandr --listmonitors >/dev/null 2>&1; then
+		return 0
+	    fi
+	    attempt=$((attempt + 1))
+	    sleep 1
+	done
+    else
+	echo "Error: ni Sway ni X11 detectados (¿DISPLAY/WAYLAND_DISPLAY?)"
+	return 1
+    fi
+
+    echo "Error: backend no respondio tras ${max_attempts}s"
+    return 1
+}
+
+is_video_wallpaper() {
+    local id="$1"
+    local pj="$WE_DIR/$id/project.json"
+    if [ -f "$pj" ]; then
+	local wtype
+	wtype=$(python3 -c "import json; print(json.load(open('$pj')).get('type',''))" 2>/dev/null)
+	[ "$wtype" = "video" ] && return 0
+    fi
+    return 1
+}
+
+restore_wallpaper() {
+    local state
+    state=$(load_state)
+    if [ -z "$state" ] || [ "$(echo "$state" | cut -d'|' -f1)" = "" ]; then
+	echo "No hay wallpaper guardado para restaurar"
+	return 1
+    fi
+
+    wait_for_backend || return 1
+    sleep 2
+
+    local id mode screen apply_type saved_profile saved_fps
+    id=$(echo "$state" | cut -d'|' -f1)
+    mode=$(echo "$state" | cut -d'|' -f2)
+    screen=$(echo "$state" | cut -d'|' -f3)
+    apply_type=$(echo "$state" | cut -d'|' -f4)
+    saved_profile=$(echo "$state" | cut -d'|' -f6)
+    saved_fps=$(echo "$state" | cut -d'|' -f7)
+
+    # respeta lo guardado salvo override por entorno actual
+    [ -z "${WE_PROFILE:-}" ] && WE_PROFILE="$saved_profile"
+    [ -z "${WE_FPS_BATTERY:-}" ] && WE_FPS_BATTERY="$saved_fps"
+    export WE_PROFILE WE_FPS_BATTERY
+
+    # Warn about video wallpapers (they work via nvdec-copy despite Vulkan warnings)
+    if is_video_wallpaper "$id"; then
+	echo "Wallpaper '$id' es video (usa nvdec-copy — Vulkan warnings son normales)"
+    fi
+
+    if [ "$apply_type" = "all" ]; then
+	apply_all "$id" "$mode"
+    else
+	apply_wallpaper "$id" "$mode" "$screen"
+    fi
+}
+
+status() {
+    if pgrep -f "$ENGINE" > /dev/null; then
+	local pid=$(pgrep -f "$ENGINE" | head -1)
+	local cpu=$(ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' ')
+	local mem=$(ps -p "$pid" -o %mem= 2>/dev/null | tr -d ' ')
+	echo "Wallpaper activo (PID: $pid, CPU: ${cpu}%, RAM: ${mem}%, backend: $(detect_backend))"
+    else
+	echo "No hay wallpaper activo"
+    fi
+}
+
+usage() {
+    local fps=$(get_refresh_rate)
+    echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
+    echo ""
+    echo "  list                                  Listar wallpapers"
+    echo "  apply <id> [modo] [pantalla]          Aplicar wallpaper"
+    echo "  apply-all <id> [modo]                 Aplicar a todos los monitores"
+    echo "  restore                               Restaurar ultimo wallpaper guardado"
+    echo "  stop                                  Detener"
+    echo "  status                                Ver estado"
+    echo ""
+    echo "Modos: normal (default), lite, no-particles"
+    echo "Env fork: WE_BACKEND=sway|x11  WE_PROFILE=lite|balanced|full"
+    echo "          WE_FPS_BATTERY=N (0=pausar)  WE_PAUSE_ON_BATTERY=1"
+    echo "Refresh detectado: ${fps}Hz"
+}
+
+case "${1:-}" in
+    list)       list_wallpapers ;;
+    apply)      apply_wallpaper "$2" "$3" "$4" ;;
+    apply-all)  apply_all "$2" "$3" ;;
+    restore)    restore_wallpaper ;;
+    stop)       stop_wallpaper ;;
+    status)     status ;;
+    *)          usage ;;
+esac

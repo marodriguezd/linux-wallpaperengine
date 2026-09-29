@@ -23,9 +23,17 @@ namespace Detectors {
     private:
 	void initialize ();
 	void stop ();
+	/**
+	 * EWMH check: true if the window advertises _NET_WM_STATE_FULLSCREEN.
+	 * Authoritative for real fullscreen clients (games, browsers, DWM fullscreen),
+	 * unlike the geometry comparison below which also matches maximized/tiled windows.
+	 */
+	[[nodiscard]] bool hasFullscreenState (Window window) const;
 
 	Display* m_display = nullptr;
 	Window m_root;
+	Atom m_netWmState = None;
+	Atom m_netWmStateFullscreen = None;
 	std::map<std::string, glm::ivec4> m_screens = {};
 	VideoDriver& m_driver;
     };

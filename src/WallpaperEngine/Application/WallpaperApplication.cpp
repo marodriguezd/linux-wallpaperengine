@@ -858,9 +858,16 @@ void WallpaperApplication::render () {
 
     if (this->m_isPaused) {
 	usleep (FULLSCREEN_CHECK_WAIT_TIME);
-	if (this->m_fullScreenDetector->anythingFullscreen () && this->m_context.state.general.keepRunning) {
-	    return;
+
+	const bool fullscreen = this->m_fullScreenDetector->anythingFullscreen ();
+	const bool batteryPause = this->refreshBatteryState ();
+
+	if ((this->m_pausedForFullscreen && fullscreen) || (this->m_pausedForBattery && batteryPause)) {
+	    if (this->m_context.state.general.keepRunning) {
+		return;
+	    }
 	}
+
 	m_renderContext->setPause (false);
 
 	// account for paused duration in playlist timers
@@ -875,6 +882,8 @@ void WallpaperApplication::render () {
 	}
 
 	this->m_isPaused = false;
+	this->m_pausedForFullscreen = false;
+	this->m_pausedForBattery = false;
     } else {
 	// update g_Daytime
 	time (&seconds);
@@ -927,9 +936,14 @@ void WallpaperApplication::render () {
 	    }
 	}
 #endif /* DEMOMODE */
-	// check for fullscreen windows and wait until there's none fullscreen
-	if (this->m_fullScreenDetector->anythingFullscreen () && this->m_context.state.general.keepRunning) {
+	// check for fullscreen windows or battery mode and wait until clear
+	const bool fullscreen = this->m_fullScreenDetector->anythingFullscreen ();
+	const bool batteryPause = this->refreshBatteryState ();
+
+	if ((fullscreen || batteryPause) && this->m_context.state.general.keepRunning) {
 	    this->m_isPaused = true;
+	    this->m_pausedForFullscreen = fullscreen;
+	    this->m_pausedForBattery = batteryPause;
 	    this->m_pauseStart = std::chrono::steady_clock::now ();
 
 	    m_renderContext->setPause (true);
@@ -972,6 +986,18 @@ void WallpaperApplication::show () {
 void WallpaperApplication::update (Render::Drivers::Output::OutputViewport* viewport) {
     // render the scene
     m_renderContext->render (viewport);
+}
+
+bool WallpaperApplication::batteryFeatureEnabled () const {
+    return this->m_context.settings.render.batteryMaximumFPS >= 0;
+}
+
+bool WallpaperApplication::refreshBatteryState () {
+    const bool onBattery = this->batteryFeatureEnabled () ? this->m_battery.isOnBattery () : false;
+
+    this->m_context.state.render.batteryActive = onBattery;
+
+    return this->m_context.settings.render.batteryMaximumFPS == 0 && onBattery;
 }
 
 void WallpaperApplication::signal (int signal) {

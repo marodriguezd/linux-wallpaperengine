@@ -514,6 +514,46 @@ void ApplicationContext::loadSettingsFromArgv () {
 	})
 	.append ();
 
+    performanceGroup.add_argument ("--fps-battery")
+	.help ("FPS cap while running on battery (UPower with sysfs fallback). 0 pauses on battery, -1 disables it")
+	.default_value (-1)
+	.store_into (this->settings.render.batteryMaximumFPS);
+
+    performanceGroup.add_argument ("--pause-on-battery")
+	.help ("Fully pause rendering while running on battery (same as --fps-battery 0)")
+	.flag ()
+	.action ([this] (const std::string& value) -> void { this->settings.render.batteryMaximumFPS = 0; });
+
+    performanceGroup.add_argument ("--profile")
+	.help (
+	    "Applies a preset immediately: lite (fps 15, no particles/mouse/parallax/audio-processing), "
+	    "balanced (fps 30, all enabled), full (fps 60, all enabled). Flags given after --profile take precedence"
+	)
+	.choices ("lite", "balanced", "full")
+	.action ([this] (const std::string& value) -> void {
+	    if (value == "lite") {
+		this->settings.render.maximumFPS = 15;
+		this->settings.general.disableParticles = true;
+		this->settings.audio.audioprocessing = false;
+		this->settings.mouse.enabled = false;
+		this->settings.mouse.disableparallax = true;
+	    } else if (value == "balanced") {
+		this->settings.render.maximumFPS = 30;
+		this->settings.general.disableParticles = false;
+		this->settings.audio.audioprocessing = true;
+		this->settings.mouse.enabled = true;
+		this->settings.mouse.disableparallax = false;
+	    } else if (value == "full") {
+		this->settings.render.maximumFPS = 60;
+		this->settings.general.disableParticles = false;
+		this->settings.audio.audioprocessing = true;
+		this->settings.mouse.enabled = true;
+		this->settings.mouse.disableparallax = false;
+	    } else {
+		sLog.exception ("Invalid profile: ", value);
+	    }
+	});
+
     auto& audioGroup = program.add_group ("Sound settings");
     auto& audioSettingsGroup = audioGroup.add_mutually_exclusive_group (false);
 
@@ -663,6 +703,13 @@ void ApplicationContext::loadSettingsFromArgv () {
 	}
 
 	this->settings.audio.volume = std::max (0, std::min (this->settings.audio.volume, 128));
+	this->settings.render.maximumFPS = std::max (1, std::min (this->settings.render.maximumFPS, 240));
+	if (this->settings.render.batteryMaximumFPS < -1) {
+	    this->settings.render.batteryMaximumFPS = -1;
+	}
+	if (this->settings.render.batteryMaximumFPS > 240) {
+	    this->settings.render.batteryMaximumFPS = 240;
+	}
 	this->settings.screenshot.delay
 	    = std::max<uint32_t> (0, std::min<uint32_t> (this->settings.screenshot.delay, 5));
 
@@ -705,6 +752,14 @@ void ApplicationContext::loadSettingsFromArgv () {
 int ApplicationContext::getArgc () const { return this->m_argc; }
 
 char** ApplicationContext::getArgv () const { return this->m_argv; }
+
+int ApplicationContext::effectiveMaximumFPS () const {
+    if (this->state.render.batteryActive && this->settings.render.batteryMaximumFPS > 0) {
+	return std::min (this->settings.render.maximumFPS, this->settings.render.batteryMaximumFPS);
+    }
+
+    return this->settings.render.maximumFPS;
+}
 
 std::filesystem::path ApplicationContext::translateBackground (const std::string& bgIdOrPath) {
     if (bgIdOrPath.find ('/') == std::string::npos) {

@@ -13,6 +13,11 @@ public:
     } general {};
 
     struct {
+	/** Set by WallpaperApplication while running on battery (battery feature enabled) */
+	bool batteryActive = false;
+    } render {};
+
+    struct {
 	bool enabled;
 	int volume;
     } audio {};

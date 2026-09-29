@@ -116,6 +116,12 @@ public:
 	    /** Indicates if pausing should happen when something goes fullscreen */
 	    bool pauseOnFullscreen;
 	    /**
+	     * Battery FPS cap applied while running on battery (UPower with sysfs fallback).
+	     * -1 disables it (always use maximumFPS), 0 pauses rendering on battery,
+	     * any positive value caps the FPS while on battery.
+	     */
+	    int batteryMaximumFPS;
+	    /**
 	     * Wayland-only: if true, only consider fullscreen toplevels that are also activated.
 	     * Useful for compositors with "virtual" fullscreen windows (e.g. scrollable tiling).
 	     */
@@ -198,9 +204,10 @@ public:
             .spanGroups = {},
         },
         .render = {
-            .mode = NORMAL_WINDOW,
-            .maximumFPS = 30,
-            .pauseOnFullscreen = true,
+	    .mode = NORMAL_WINDOW,
+	    .maximumFPS = 30,
+	    .pauseOnFullscreen = true,
+	    .batteryMaximumFPS = -1,
             .pauseOnFullscreenOnlyWhenActive = false,
             .fullscreenPauseIgnoreAppIds = {},
             .debug = {
@@ -241,6 +248,11 @@ public:
 
     [[nodiscard]] int getArgc () const;
     [[nodiscard]] char** getArgv () const;
+    /**
+     * FPS cap actually used for throttling: battery cap (capped by maximumFPS)
+     * when state.render.batteryActive is set, maximumFPS otherwise.
+     */
+    [[nodiscard]] int effectiveMaximumFPS () const;
 
 private:
     /** Program argument count on startup */

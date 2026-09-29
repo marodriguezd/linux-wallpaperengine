@@ -108,9 +108,10 @@ glm::ivec2 GLFWOpenGLDriver::getFramebufferSize () const {
 uint32_t GLFWOpenGLDriver::getFrameCounter () const { return this->m_frameCounter; }
 
 void GLFWOpenGLDriver::dispatchEventQueue () {
-    static float startTime, endTime, minimumTime = 1.0f / this->m_context.settings.render.maximumFPS;
+    // computed every frame: the cap can change at runtime (battery mode)
+    const float minimumTime = 1.0f / static_cast<float> (this->m_context.effectiveMaximumFPS ());
     // get the start time of the frame
-    startTime = this->getRenderTime ();
+    const float startTime = this->getRenderTime ();
     // clear the screen
     glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -152,7 +153,7 @@ void GLFWOpenGLDriver::dispatchEventQueue () {
     // increase frame counter
     this->m_frameCounter++;
     // get the end time of the frame
-    endTime = this->getRenderTime ();
+    const float endTime = this->getRenderTime ();
 
     // ensure the frame time is correct to not overrun FPS
     if ((endTime - startTime) < minimumTime) {

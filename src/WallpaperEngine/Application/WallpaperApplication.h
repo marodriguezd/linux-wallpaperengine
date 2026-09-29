@@ -19,6 +19,7 @@
 
 #include "WallpaperEngine/Data/Model/Types.h"
 #include "WallpaperEngine/Media/MediaSource.h"
+#include "WallpaperEngine/System/BatteryState.h"
 
 #include <set>
 
@@ -152,6 +153,15 @@ private:
 
     void initializePlaylists ();
     void updatePlaylists ();
+    /**
+     * @return true if any battery handling (--fps-battery/--pause-on-battery) is enabled
+     */
+    [[nodiscard]] bool batteryFeatureEnabled () const;
+    /**
+     * Refreshes state.render.batteryActive (cached, cheap to call every frame).
+     * @return true if rendering must pause for battery (batteryMaximumFPS == 0 while on battery)
+     */
+    bool refreshBatteryState ();
     void advancePlaylist (
 	const std::string& screen, ActivePlaylist& playlist, const std::chrono::steady_clock::time_point& now
     );
@@ -178,6 +188,11 @@ private:
     std::unique_ptr<WallpaperEngine::Media::MediaSource> m_mediaSource = nullptr;
     std::mt19937 m_playlistRng { std::random_device {}() };
     bool m_isPaused = false;
+    /** Pause was triggered by a fullscreen window (resume when none remains) */
+    bool m_pausedForFullscreen = false;
+    /** Pause was triggered by battery mode (resume when back on AC) */
+    bool m_pausedForBattery = false;
+    System::BatteryState m_battery;
     bool m_screenShotTaken = false;
     uint32_t m_nextFrameScreenshot = 0;
     std::chrono::steady_clock::time_point m_pauseStart {};

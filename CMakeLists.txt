@@ -359,6 +359,9 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Media/DBusMediaSource.h
     src/WallpaperEngine/Media/DBusMediaSource.cpp
 
+    src/WallpaperEngine/System/BatteryState.h
+    src/WallpaperEngine/System/BatteryState.cpp
+
     src/WallpaperEngine/Render/Shaders/Variables/ShaderVariable.h
     src/WallpaperEngine/Render/Shaders/Variables/ShaderVariable.cpp
     src/WallpaperEngine/Render/Shaders/Variables/ShaderVariableFloat.h
