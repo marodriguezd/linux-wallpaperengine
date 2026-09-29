@@ -8,9 +8,15 @@
 #   - WE_FPS_BATTERY=N -> --fps-battery N (0 = pausar en batería)
 #   - WE_PAUSE_ON_BATTERY=1 -> --pause-on-battery
 
-WE_DIR="$HOME/.local/share/Steam/steamapps/workshop/content/431960"
-ASSETS_DIR="$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets"
-ENGINE="linux-wallpaperengine"
+WE_DIR="${WE_DIR:-$HOME/.local/share/Steam/steamapps/workshop/content/431960}"
+ASSETS_DIR="${WE_ASSETS_DIR:-$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets}"
+ENGINE="${WE_ENGINE:-linux-wallpaperengine}"
+# Cursor: se hereda del entorno salvo override (antes Banana:30 fijo).
+# En dwm-titus el vivo es cat_cursors:32 vía theme-env.sh, así que heredar
+# respeta tu tema en cualquier X11.
+CURSOR_ENV=()
+[ -n "${WE_CURSOR_THEME:-}" ] && CURSOR_ENV+=("XCURSOR_THEME=$WE_CURSOR_THEME")
+[ -n "${WE_CURSOR_SIZE:-}" ] && CURSOR_ENV+=("XCURSOR_SIZE=$WE_CURSOR_SIZE")
 STATE_DIR="$HOME/.config/we-wallpaper"
 STATE_FILE="$STATE_DIR/state.conf"
 # Fase 2: catálogo (misma ruta que Library::cachePath del engine)
@@ -190,7 +196,9 @@ apply_wallpaper() {
     esac
 
     # shellcheck disable=SC2086
-    XCURSOR_THEME=${XCURSOR_THEME:-Banana} XCURSOR_SIZE=${XCURSOR_SIZE:-30} nohup $ENGINE \
+    # NOTE: env es obligatorio; bash no reconoce VAR=val salidos de una
+    # expansión ("${array[@]}" cmd trataría el primero como comando)
+    env "${CURSOR_ENV[@]}" nohup $ENGINE \
 	--screen-root "$screen" \
 	--bg "$wallpaper_id" \
 	"${fork_args[@]}" \
@@ -199,6 +207,7 @@ apply_wallpaper() {
 
     echo "Wallpaper $wallpaper_id en $screen @ ${fps}Hz (modo: $mode, backend: $(detect_backend))"
     save_state "$wallpaper_id" "$mode" "$screen" "single"
+    apply_theme "$(theme_image_for "$wallpaper_id")"
 }
 
 apply_all() {
@@ -236,18 +245,30 @@ apply_all() {
 	    ;;
     esac
 
+    # Un solo proceso con N pares --screen-root/--bg: evita la carrera del
+    # root-pixmap de N procesos concurrentes (visible en multi-head i3/bspwm)
+    local screen_args=() first_screen=""
     while IFS= read -r screen; do
-	# shellcheck disable=SC2086
-	XCURSOR_THEME=${XCURSOR_THEME:-Banana} XCURSOR_SIZE=${XCURSOR_SIZE:-30} nohup $ENGINE \
-	    --screen-root "$screen" \
-	    --bg "$wallpaper_id" \
-	    "${fork_args[@]}" \
-	    "${flags[@]}" \
-	    --assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	[ -z "$screen" ] && continue
+	[ -z "$first_screen" ] && first_screen="$screen"
+	screen_args+=(--screen-root "$screen" --bg "$wallpaper_id")
     done < <(get_all_screens)
 
+    if [ ${#screen_args[@]} -eq 0 ]; then
+	echo "Error: no se detectó ningún monitor"
+	return 1
+    fi
+
+    # shellcheck disable=SC2086
+    env "${CURSOR_ENV[@]}" nohup $ENGINE \
+	"${screen_args[@]}" \
+	"${fork_args[@]}" \
+	"${flags[@]}" \
+	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+
     echo "Wallpaper $wallpaper_id en todos los monitores @ ${fps}Hz (modo: $mode)"
-    save_state "$wallpaper_id" "$mode" "" "all"
+    save_state "$wallpaper_id" "$mode" "$first_screen" "all"
+    apply_theme "$(theme_image_for "$wallpaper_id")"
 }
 
 stop_wallpaper() {
@@ -399,6 +420,133 @@ for it in json.load(open('$CACHE_FILE'))['items']:
     echo "Previews: $done ok, $skipped saltados, $failed fallos -> $THUMBS_DIR"
 }
 
+# Fase 3: cambiador con cascada rofi -> dmenu -> fzf -> terminal.
+# Lee la caché (no escanea), devuelve el id elegido por stdout en apply.
+switch_wallpaper() {
+    local mode="${1:-${WE_MODE:-lite}}"
+    # WE_MENU=rofi|dmenu|fzf|terminal fuerza un tier (auto = cascada)
+    local menu="${WE_MENU:-auto}"
+    ensure_cache || { echo "Sin catálogo: ejecuta 'we-wallpaper refresh'"; return 1; }
+    local entries
+    entries=$(python3 -c "
+import json
+for it in json.load(open('$CACHE_FILE'))['items']:
+    flag = ' (invalid)' if not it.get('valid', True) else ''
+    print('%s [%s] %s%s' % (it.get('id','?'), it.get('type','unknown'), it.get('title') or it.get('id','?'), flag))
+")
+    [ -z "$entries" ] && { echo "Caché vacía"; return 1; }
+    local line=""
+    if { [ "$menu" = "auto" ] || [ "$menu" = "rofi" ]; } \
+	&& command -v rofi >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+	line=$(echo "$entries" | rofi -dmenu -i -p "Wallpaper" 2>/dev/null)
+    elif { [ "$menu" = "auto" ] || [ "$menu" = "dmenu" ]; } \
+	&& command -v dmenu >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+	line=$(echo "$entries" | dmenu -i -p "Wallpaper:" 2>/dev/null)
+    elif { [ "$menu" = "auto" ] || [ "$menu" = "fzf" ]; } \
+	&& command -v fzf >/dev/null 2>&1; then
+	line=$(echo "$entries" | fzf --prompt="Wallpaper> " --height=40% --reverse 2>/dev/null)
+    else
+	echo "$entries" | awk '{printf "%d) %s\n", NR, $0}'
+	local total=$(echo "$entries" | wc -l) choice=""
+	while :; do
+	    printf "Elige [1-%d]: " "$total" >&2
+	    read -r choice || return 1
+	    if [ "$choice" -ge 1 ] 2>/dev/null && [ "$choice" -le "$total" ] 2>/dev/null; then
+		line=$(echo "$entries" | sed -n "${choice}p")
+		break
+	    fi
+	done
+    fi
+    [ -z "$line" ] && return 1
+    local id=$(echo "$line" | awk '{print $1}')
+    apply_wallpaper "$id" "$mode" "$(get_primary_screen)"
+}
+
+# Fase 3: preset cuyo normbgcolor más se parece al color dominante de la imagen.
+# Solo lee themes.toml (usuario o managed), no escribe nada.
+pick_nearest_preset() {
+    local img="$1"
+    python3 - "$img" <<'EOF' 2>/dev/null
+import os, sys, tomllib
+img = sys.argv[1]
+themes = os.path.expanduser("~/.config/dwm-titus/themes.toml")
+if not os.path.isfile(themes):
+    themes = os.path.expanduser("~/.local/share/dwm-titus/config/themes.toml")
+try:
+    data = tomllib.load(open(themes, "rb"))
+except Exception:
+    sys.exit(1)
+from PIL import Image
+small = Image.open(img).convert("RGB").resize((64, 64))
+px = list(small.getdata())
+dom = tuple(sum(c) // len(px) for c in zip(*px))
+
+
+def dist(a, b):
+    return sum((x - y) ** 2 for x, y in zip(a, b))
+
+
+best, best_d = None, None
+# [theme.nombre] anida bajo la clave "theme" en TOML
+presets = data.get("theme", data) if isinstance(data, dict) else {}
+for name, preset in presets.items():
+    if not isinstance(preset, dict) or "normbgcolor" not in preset:
+        continue
+    try:
+        h = preset["normbgcolor"].lstrip("#")
+        rgb = (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except Exception:
+        continue
+    d = dist(dom, rgb)
+    if best_d is None or d < best_d:
+        best, best_d = name, d
+if best is None:
+    sys.exit(1)
+print(best)
+EOF
+}
+
+# Fase 3: theming estilo dwm-titus con fallbacks (nunca rompe el apply):
+#   1) registra el fondo en dwm-titus si existe (fallback estático tras el engine)
+#   2) WE_THEME=<preset> o auto (preset más cercano por PIL) vía dwm-settings-theme
+#   quickshell recarga solo vía FileView: sin restart, sin pywal.
+apply_theme() {
+    local img="$1"
+    [ "${WE_THEME_ENABLED:-1}" = "0" ] && return 0
+    if [ "${WE_WALLPAPER_REGISTER:-1}" != "0" ] \
+	&& command -v dwm-settings-wallpaper >/dev/null 2>&1 && [ -f "$img" ]; then
+	dwm-settings-wallpaper apply "$img" fill >/dev/null 2>&1 || true
+    fi
+    local theme="${WE_THEME:-}"
+    if [ "$theme" = "auto" ]; then
+	theme=$(pick_nearest_preset "$img" 2>/dev/null) || theme=""
+	[ -n "$theme" ] && echo "Tema auto: $theme"
+    fi
+    if [ -n "$theme" ] && [ "$theme" != "auto" ] \
+	&& command -v dwm-settings-theme >/dev/null 2>&1; then
+	dwm-settings-theme apply "$theme" >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
+# Imagen representativa del item para theming: thumb > preview del workshop.
+theme_image_for() {
+    local id="$1"
+    if [ -s "$THUMBS_DIR/$id.png" ]; then
+	echo "$THUMBS_DIR/$id.png"
+	return 0
+    fi
+    ensure_cache 2>/dev/null || return 1
+    python3 -c "
+import json, os
+for it in json.load(open('$CACHE_FILE'))['items']:
+    if it.get('id') == '$id' and it.get('preview'):
+        p = os.path.join(it.get('path',''), it['preview'])
+        if os.path.isfile(p):
+            print(p)
+" 2>/dev/null
+}
+
 status() {
     if pgrep -f "$ENGINE" > /dev/null; then
 	local pid=$(pgrep -f "$ENGINE" | head -1)
@@ -415,6 +563,7 @@ usage() {
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
     echo ""
     echo "  list                                  Listar wallpapers (caché Fase 2)"
+    echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
     echo "  refresh                               Reescanear workshop a la caché"
     echo "  make-previews [--force]               Generar thumbs en la caché"
     echo "  apply <id> [modo] [pantalla]          Aplicar wallpaper"
@@ -424,14 +573,17 @@ usage() {
     echo "  status                                Ver estado"
     echo ""
     echo "Modos: normal (default), lite, no-particles"
-    echo "Env fork: WE_BACKEND=sway|x11  WE_PROFILE=lite|balanced|full"
+    echo "Env X11: WE_DIR WE_ASSETS_DIR WE_ENGINE WE_BACKEND WE_MODE"
+    echo "Env fork: WE_PROFILE=lite|balanced|full"
     echo "          WE_FPS=N (gana a todo)  WE_FPS_BATTERY=N (0=pausar)"
     echo "          WE_PAUSE_ON_BATTERY=1"
+    echo "Env tema: WE_THEME=<preset>|auto|\"\"  WE_THEME_ENABLED=0|1  WE_WALLPAPER_REGISTER=0|1"
     echo "Refresh detectado: ${fps}Hz"
 }
 
 case "${1:-}" in
     list)       list_wallpapers ;;
+    switch)     switch_wallpaper "$2" ;;
     refresh)    refresh_library ;;
     make-previews) make_previews "$2" ;;
     apply)      apply_wallpaper "$2" "$3" "$4" ;;
