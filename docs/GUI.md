@@ -51,6 +51,9 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
   remotos (`Image.async` + placeholder): escribir filtra las tarjetas
   cargadas, Enter busca online; instalar descarga (vídeo→WE_DIR con
   `project.json`, imagen→`backgrounds-lab`) + refresh a Local.
+* `remove <id> [--force]`: borra items del store (`motionbgs-*`,
+  `bing-*`, `img-*`) con su thumb y título, y refresca. Los wallpapers
+  reales del workshop se niegan sin `--force`.
 * Tipo `image` (`img-<stem>`): las estáticas de `backgrounds-lab` salen
   en Local con chip `image`, thumb directo y sin estrella/props;
   `apply-id img-*` para el engine y pone `feh --bg-fill` (restore y

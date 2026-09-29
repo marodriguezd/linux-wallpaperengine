@@ -406,6 +406,23 @@ Scope {
         applyProcess.running = true;
     }
 
+    function isStoreItem(id : string) : bool {
+        if (!id) {
+            return false;
+        }
+        return id.indexOf("motionbgs-") === 0 || id.indexOf("bing-") === 0 || id.indexOf("img-") === 0;
+    }
+
+    function remove(item : var) : void {
+        if (!item || !item.id) {
+            return;
+        }
+
+        root.status = "borrando " + (item.title || item.id) + "...";
+        removeProcess.command = ["we-wallpaper", "remove", item.id];
+        removeProcess.running = true;
+    }
+
     function refresh() : void {
         refreshProcess.running = true;
         currentProcess.running = true;
@@ -432,6 +449,22 @@ Scope {
             onStreamFinished: {
                 root.status = this.text;
                 currentProcess.running = true;
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: removeProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                if (root.selectedId !== "") {
+                    root.selectedId = "";
+                    root.props = [];
+                }
+                refreshProcess.running = true;
             }
         }
         stderr: StdioCollector {}

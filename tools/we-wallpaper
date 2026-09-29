@@ -902,6 +902,51 @@ if n == 0:
 }
 
 # catalog-get <ref> [id]: resuelve la ref a URL directa y reutiliza fetch.
+# Borra un item instalado por el store (motionbgs-*, bing-*, img-*) con su
+# thumb y título. Nunca toca wallpapers reales del workshop sin --force.
+remove_item() {
+    local id="${1:-}" force="${2:-}"
+    [ -n "$id" ] || { echo "Uso: we-wallpaper remove <id> [--force]"; return 1; }
+    local dir="" target=""
+    if [[ "$id" == img-* ]]; then
+	local lab="$HOME/Pictures/backgrounds-lab" stem="${id#img-}" e
+	for e in jpg jpeg png webp bmp JPG JPEG PNG WEBP; do
+	    [ -f "$lab/$stem.$e" ] && { target="$lab/$stem.$e"; break; }
+	done
+	[ -n "$target" ] || { echo "No existe: $id"; return 1; }
+    else
+	dir="$WE_DIR/$id"
+	[ -d "$dir" ] || { echo "No existe: $id"; return 1; }
+	if [[ "$id" != motionbgs-* && "$id" != bing-* && "$id" != fetch-* ]] \
+	    && [ "$force" != "--force" ]; then
+	    echo "'$id' no parece del store (usa --force si sabes lo que haces)"
+	    return 1
+	fi
+    fi
+
+    if [ -n "$dir" ]; then
+	rm -rf "$dir" || { echo "No se pudo borrar $dir"; return 1; }
+    else
+	rm -f "$target" || { echo "No se pudo borrar $target"; return 1; }
+    fi
+    rm -f "$THUMBS_DIR/$id.png"
+    TITLES_FILE="$TITLES_FILE" TID="$id" python3 -c "
+import json, os
+p = os.environ['TITLES_FILE']
+try:
+    d = json.load(open(p))
+except Exception:
+    raise SystemExit
+d.pop(os.environ['TID'], None)
+if os.environ['TID'].startswith('img-'):
+    d.pop(os.environ['TID'][4:], None)
+json.dump(d, open(p + '.tmp', 'w'), indent=1, ensure_ascii=False)
+os.replace(p + '.tmp', p)
+" 2>/dev/null
+    refresh_library >/dev/null 2>&1
+    echo "Borrado: $id"
+}
+
 catalog_get() {
     local ref="${1:-}" id="${2:-}"
     [ -n "$ref" ] || { echo "Uso: we-wallpaper catalog-get <ref> [id|4k] [título]"; return 1; }
@@ -960,13 +1005,13 @@ print(d.get('path', ''))
 	    fetch_url "$detail" "$id"
 	    ;;
 	motionbgs)
-	    # catalog-get motionbgs:<id> [hd|4k|<id-custom>]: mp4 directo.
+	    # catalog-get motionbgs:<id> [hd|4k|<id-custom>] [título]
 	    local q="hd" wid="motionbgs-$key-hd"
-	    if [ "${2:-}" = "4k" ]; then
-		q="4k"; wid="motionbgs-$key-4k"
-	    elif [ -n "${2:-}" ]; then
-		wid="$2"
-	    fi
+	    case "${2:-}" in
+		4k) q="4k"; wid="motionbgs-$key-4k" ;;
+		hd|"") ;;
+		*) wid="$2" ;;
+	    esac
 	    [ -d "$WE_DIR/$wid" ] && { echo "Ya existe: $wid (usa otro id)"; return 1; }
 	    WE_FETCH_UA="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
 	    WE_FETCH_REFERER="https://motionbgs.com/" \
@@ -1384,7 +1429,8 @@ usage() {
     echo "  apply-id <id> [modo]                  Aplicar por id (para clicks)"
     echo "  fetch <url> [id]                      Descargar video/imagen web"
     echo "  catalog <src> [query] [page]        Explorar bing|wallhaven|motionbgs|minimal"
-    echo "  catalog-get <ref> [id|4k]           Descargar ref (usa fetch)"
+    echo "  catalog-get <ref> [id|4k] [título]  Descargar ref (usa fetch)"
+    echo "  remove <id> [--force]                 Borrar item del store (+thumb)"
     echo "  import <fich> [id] [--title ..]       Importar vídeo local a WE_DIR"
     echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
     echo "  grid [modo]                           Grid rofi con thumbs (cae a switch)"
@@ -1464,6 +1510,7 @@ EOF
     fetch)      fetch_url "$2" "$3" ;;
     catalog)    catalog "$2" "$3" "$4" ;;
     catalog-get) catalog_get "$2" "$3" "$4" ;;
+    remove)      remove_item "$2" "$3" ;;
     import)     import_video "$2" "$3" "$4" "$5" ;;
     switch)     switch_wallpaper "$2" ;;
     grid)       grid "$2" ;;

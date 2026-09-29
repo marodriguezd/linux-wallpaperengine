@@ -408,6 +408,16 @@ FloatingWindow {
                         }
                     }
 
+                    RowLayout {
+                        spacing: 6
+                        visible: root.galleryModel.mode === "local" && root.galleryModel.isStoreItem(modelData.id)
+
+                        ShellButton {
+                            label: "🗑"
+                            onActivated: root.galleryModel.remove(modelData)
+                        }
+                    }
+
                     ShellButton {
                         visible: root.galleryModel.mode === "explore"
                         enabled: root.galleryModel.downloadingRef === ""
