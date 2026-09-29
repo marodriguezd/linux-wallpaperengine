@@ -189,6 +189,22 @@ public:
 	    /** The path to where the screenshot must be saved */
 	    std::filesystem::path path;
 	} screenshot;
+
+	/**
+	 * Library/catalog settings (list/search without starting the renderer)
+	 */
+	struct {
+	    /** List all installed workshop backgrounds */
+	    bool list;
+	    /** Search query over id/title/description/tags (empty for --list-library) */
+	    std::string search;
+	    /** Restrict to scene|video|web (empty means all) */
+	    std::string typeFilter;
+	    /** Print as JSON instead of human-readable lines */
+	    bool asJson;
+	    /** Force a workshop rescan before listing or searching */
+	    bool refresh;
+	} library;
     } settings = {
         .general = {
             .onlyListProperties = false,
@@ -242,6 +258,13 @@ public:
             .delay = 5,
             .path = "",
         },
+        .library = {
+            .list = false,
+            .search = "",
+            .typeFilter = "",
+            .asJson = false,
+            .refresh = false,
+        },
     };
 
     ApplicationState state;
@@ -253,6 +276,11 @@ public:
      * when state.render.batteryActive is set, maximumFPS otherwise.
      */
     [[nodiscard]] int effectiveMaximumFPS () const;
+    /**
+     * True when only the library catalog is requested (--list-library/--search):
+     * no background is required and the renderer must not start.
+     */
+    [[nodiscard]] bool wantsLibrary () const;
 
 private:
     /** Program argument count on startup */

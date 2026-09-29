@@ -599,6 +599,33 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.default_value ("")
 	.action ([this] (const std::string& value) -> void { this->settings.general.assets = value; });
 
+    auto& libraryGroup = program.add_group ("Library options");
+
+    libraryGroup.add_argument ("--list-library")
+	.help ("Lists installed workshop backgrounds without starting the renderer")
+	.flag ()
+	.store_into (this->settings.library.list);
+
+    libraryGroup.add_argument ("--search")
+	.help ("Searches installed backgrounds by id, title, description or tags")
+	.default_value ("")
+	.store_into (this->settings.library.search);
+
+    libraryGroup.add_argument ("--type")
+	.help ("Restricts --search (and --list-library) to a background type")
+	.choices ("scene", "video", "web")
+	.action ([this] (const std::string& value) -> void { this->settings.library.typeFilter = value; });
+
+    libraryGroup.add_argument ("--json")
+	.help ("Prints --list-library/--search output as JSON")
+	.flag ()
+	.store_into (this->settings.library.asJson);
+
+    libraryGroup.add_argument ("--refresh")
+	.help ("Forces a workshop rescan before listing or searching")
+	.flag ()
+	.store_into (this->settings.library.refresh);
+
     auto& configurationGroup = program.add_group ("Wallpaper configuration options");
 
     configurationGroup.add_argument ("--disable-particles")
@@ -698,7 +725,7 @@ void ApplicationContext::loadSettingsFromArgv () {
     try {
 	program.parse_known_args (this->m_argc, this->m_argv);
 
-	if (this->settings.general.defaultBackground.empty ()) {
+	if (this->settings.general.defaultBackground.empty () && !this->wantsLibrary ()) {
 	    throw std::runtime_error ("At least one background ID must be specified");
 	}
 
@@ -711,7 +738,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    this->settings.render.batteryMaximumFPS = 240;
 	}
 	this->settings.screenshot.delay
-	    = std::max<uint32_t> (0, std::min<uint32_t> (this->settings.screenshot.delay, 5));
+	    = std::max<uint32_t> (0, std::min<uint32_t> (this->settings.screenshot.delay, 600));
 
 	// use std::cout on this in case logging is disabled, this way it's easy to look at what is running
 	std::stringbuf buffer;
@@ -759,6 +786,10 @@ int ApplicationContext::effectiveMaximumFPS () const {
     }
 
     return this->settings.render.maximumFPS;
+}
+
+bool ApplicationContext::wantsLibrary () const {
+    return this->settings.library.list || !this->settings.library.search.empty ();
 }
 
 std::filesystem::path ApplicationContext::translateBackground (const std::string& bgIdOrPath) {

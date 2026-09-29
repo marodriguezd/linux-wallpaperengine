@@ -359,6 +359,9 @@ set(COMMON_SOURCES
     src/WallpaperEngine/Media/DBusMediaSource.h
     src/WallpaperEngine/Media/DBusMediaSource.cpp
 
+    src/WallpaperEngine/Library/Library.h
+    src/WallpaperEngine/Library/Library.cpp
+
     src/WallpaperEngine/System/BatteryState.h
     src/WallpaperEngine/System/BatteryState.cpp
 

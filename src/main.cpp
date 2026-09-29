@@ -3,6 +3,7 @@
 
 #include "WallpaperEngine/Application/ApplicationContext.h"
 #include "WallpaperEngine/Application/WallpaperApplication.h"
+#include "WallpaperEngine/Library/Library.h"
 #include "WallpaperEngine/Logging/Log.h"
 
 WallpaperEngine::Application::WallpaperApplication* app;
@@ -18,6 +19,52 @@ void signalhandler (const int sig) {
 void initLogging () {
     sLog.addOutput (new std::ostream (std::cout.rdbuf ()));
     sLog.addError (new std::ostream (std::cerr.rdbuf ()));
+}
+
+/**
+ * Library catalog mode: scan/load the workshop cache and print the
+ * requested listing without constructing the renderer. Returns the
+ * process exit code.
+ */
+int runLibraryMode (WallpaperEngine::Application::ApplicationContext& appContext) {
+    using WallpaperEngine::Library::Library;
+
+    const auto& librarySettings = appContext.settings.library;
+
+    Library library;
+
+    if (librarySettings.refresh || !library.load ()) {
+	library.scan ();
+
+	if (!library.save ()) {
+	    sLog.error ("Could not write library cache at ", Library::cachePath ().string ());
+	}
+    }
+
+    std::vector<WallpaperEngine::Library::LibraryItem> results;
+
+    if (librarySettings.search.empty () && librarySettings.typeFilter.empty ()) {
+	results = library.items ();
+    } else {
+	// an empty query matches everything, so --type alone filters the full list
+	results = library.search (librarySettings.search, librarySettings.typeFilter);
+    }
+
+    if (librarySettings.asJson) {
+	std::cout << Library::toJson (results) << std::endl;
+    } else {
+	for (const auto& item : results) {
+	    std::cout << item.id << " [" << item.type << "] " << item.title;
+
+	    if (!item.valid) {
+		std::cout << " (invalid)";
+	    }
+
+	    std::cout << std::endl;
+	}
+    }
+
+    return 0;
 }
 
 int main (int argc, char* argv[]) {
@@ -46,6 +93,11 @@ int main (int argc, char* argv[]) {
 	WallpaperEngine::Application::ApplicationContext appContext (argc, argv);
 
 	appContext.loadSettingsFromArgv ();
+
+	// catalog mode never starts the renderer (and needs no background)
+	if (appContext.wantsLibrary ()) {
+	    return runLibraryMode (appContext);
+	}
 
 	app = new WallpaperEngine::Application::WallpaperApplication (appContext);
 

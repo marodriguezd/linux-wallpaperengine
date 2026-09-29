@@ -13,6 +13,9 @@ ASSETS_DIR="$HOME/.local/share/Steam/steamapps/common/wallpaper_engine/assets"
 ENGINE="linux-wallpaperengine"
 STATE_DIR="$HOME/.config/we-wallpaper"
 STATE_FILE="$STATE_DIR/state.conf"
+# Fase 2: catálogo (misma ruta que Library::cachePath del engine)
+CACHE_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/linux-wallpaperengine/library.json"
+THUMBS_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/linux-wallpaperengine/thumbs"
 
 detect_backend() {
     if [ -n "${WE_BACKEND:-}" ]; then
@@ -57,6 +60,25 @@ load_state() {
 	source "$STATE_FILE"
 	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}|${WE_PAUSE_ON_BATTERY:-}"
     fi
+}
+
+# Fase 2: ¿el engine trae catálogo (fork) o es el upstream viejo?
+engine_supports_library() {
+    "$ENGINE" --help 2>/dev/null | grep -qF -- "--list-library"
+}
+
+# Deja una caché válida lista: la existente, la regenerada con el fork,
+# o falla para que el llamador use el scan legacy.
+ensure_cache() {
+    if [ -s "$CACHE_FILE" ] \
+	&& python3 -c "import json; d=json.load(open('$CACHE_FILE')); assert d.get('version')==1 and isinstance(d.get('items'),list)" 2>/dev/null; then
+	return 0
+    fi
+    if engine_supports_library && "$ENGINE" --list-library --refresh >/dev/null 2>&1 \
+	&& [ -s "$CACHE_FILE" ]; then
+	return 0
+    fi
+    return 1
 }
 
 get_refresh_rate() {
@@ -107,6 +129,17 @@ fork_flags() {
 
 list_wallpapers() {
     echo "=== Wallpapers disponibles [backend: $(detect_backend)] ==="
+    # Vía rápida Fase 2: un solo python3 sobre la caché (antes: 2 por item)
+    if ensure_cache; then
+	python3 -c "
+import json
+for it in json.load(open('$CACHE_FILE'))['items']:
+    flag = '' if it.get('valid', True) else ' (invalid)'
+    print('%-12s [%-5s] %s%s' % (it.get('id', '?'), it.get('type', 'unknown'), it.get('title') or it.get('id', '?'), flag))
+"
+	return 0
+    fi
+    # Legacy: engine viejo sin catálogo (lento pero funciona)
     for dir in "$WE_DIR"/*/; do
 	id=$(basename "$dir")
 	name=""
@@ -255,6 +288,13 @@ wait_for_backend() {
 
 is_video_wallpaper() {
     local id="$1"
+    # Vía caché Fase 2 (tipos en minúsculas: scene|video|web)
+    if ensure_cache 2>/dev/null; then
+	local wtype
+	wtype=$(python3 -c "import json; print('\n'.join(it.get('type','') for it in json.load(open('$CACHE_FILE'))['items'] if it.get('id')=='$id'))" 2>/dev/null | head -n 1)
+	[ "$(echo "$wtype" | tr '[:upper:]' '[:lower:]')" = "video" ] && return 0
+	return 1
+    fi
     local pj="$WE_DIR/$id/project.json"
     if [ -f "$pj" ]; then
 	local wtype
@@ -302,6 +342,63 @@ restore_wallpaper() {
     fi
 }
 
+refresh_library() {
+    if engine_supports_library; then
+	"$ENGINE" --list-library --refresh
+    else
+	echo "Engine sin --list-library: instala el fork (fase B) para regenerar la caché"
+	return 1
+    fi
+}
+
+# Fase 2: thumbs uniformes en $THUMBS_DIR/<id>.png
+#   video -> primer frame con ffmpeg (instantáneo, fiable)
+#   scene/web -> render real del engine en ventana 480x270 (necesita display)
+make_previews() {
+    local force=0 timeout="${WE_PREVIEW_TIMEOUT:-60}"
+    [ "${1:-}" = "--force" ] && force=1
+    ensure_cache || { echo "Sin caché y sin engine fork: no se puede"; return 1; }
+    mkdir -p "$THUMBS_DIR"
+    local done=0 skipped=0 failed=0
+    while IFS='|' read -r id wtype wfile wpath; do
+	[ -z "$id" ] && continue
+	local thumb="$THUMBS_DIR/$id.png"
+	if [ $force -eq 0 ] && [ -s "$thumb" ]; then
+	    skipped=$((skipped + 1)); continue
+	fi
+	if [ "$wtype" = "video" ] && command -v ffmpeg >/dev/null 2>&1 && [ -f "$wpath/$wfile" ]; then
+	    if ffmpeg -y -loglevel error -i "$wpath/$wfile" -vframes 1 "$thumb" 2>/dev/null \
+		&& [ -s "$thumb" ]; then
+		done=$((done + 1)); echo "thumb: $id (ffmpeg)"
+	    else
+		failed=$((failed + 1)); echo "thumb FAIL: $id (ffmpeg)"
+	    fi
+	elif [ "$wtype" = "scene" ] || [ "$wtype" = "web" ]; then
+	    "$ENGINE" "$id" --screenshot "$thumb" --screenshot-delay 45 \
+		--profile lite --fps 15 -w 0x0x480x270 --silent --disable-mouse \
+		--assets-dir "$ASSETS_DIR" >/dev/null 2>&1 &
+	    local pid=$! waited=0
+	    while [ $waited -lt "$timeout" ] && [ ! -s "$thumb" ]; do
+		sleep 1; waited=$((waited + 1))
+	    done
+	    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+	    if [ -s "$thumb" ]; then
+		done=$((done + 1)); echo "thumb: $id (engine)"
+	    else
+		failed=$((failed + 1)); echo "thumb FAIL: $id (engine, ¿display?)"
+	    fi
+	else
+	    echo "thumb SKIP: $id (tipo '$wtype' sin fuente)"
+	    skipped=$((skipped + 1))
+	fi
+    done < <(python3 -c "
+import json
+for it in json.load(open('$CACHE_FILE'))['items']:
+    print('%s|%s|%s|%s' % (it.get('id',''), it.get('type',''), it.get('file',''), it.get('path','')))
+")
+    echo "Previews: $done ok, $skipped saltados, $failed fallos -> $THUMBS_DIR"
+}
+
 status() {
     if pgrep -f "$ENGINE" > /dev/null; then
 	local pid=$(pgrep -f "$ENGINE" | head -1)
@@ -317,7 +414,9 @@ usage() {
     local fps=$(get_refresh_rate)
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
     echo ""
-    echo "  list                                  Listar wallpapers"
+    echo "  list                                  Listar wallpapers (caché Fase 2)"
+    echo "  refresh                               Reescanear workshop a la caché"
+    echo "  make-previews [--force]               Generar thumbs en la caché"
     echo "  apply <id> [modo] [pantalla]          Aplicar wallpaper"
     echo "  apply-all <id> [modo]                 Aplicar a todos los monitores"
     echo "  restore                               Restaurar ultimo wallpaper guardado"
@@ -333,6 +432,8 @@ usage() {
 
 case "${1:-}" in
     list)       list_wallpapers ;;
+    refresh)    refresh_library ;;
+    make-previews) make_previews "$2" ;;
     apply)      apply_wallpaper "$2" "$3" "$4" ;;
     apply-all)  apply_all "$2" "$3" ;;
     restore)    restore_wallpaper ;;
