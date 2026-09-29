@@ -20,6 +20,49 @@ Bring **Wallpaper Engine**-style live wallpapers to Linux! This project allows y
 
 ---
 
+## 🐧 Fork: X11 + DWM + catálogo y galería (rama `feat/battery-x11`)
+
+> Todo lo de abajo es **nuestro añadido** sobre el upstream de
+> [Almamu](https://github.com/Almamu/linux-wallpaperengine), al que seguimos
+> haciendo merge. Nada del README original se ha tocado; esta sección es
+> autoproclamada y vive solo en la rama del fork.
+
+![Galería local: filtros con contadores, meta por tarjeta, badge ACTIVA y panel de propiedades](docs/images/gallery-local.png)
+
+![Galería Explorar: MotionBGS con thumbs remotos, chips por fuente, instalar y cargar más](docs/images/gallery-explore.png)
+
+**Qué añade el fork, en corto:**
+
+* **Batería y rendimiento** — `--fps-battery`, `--pause-on-battery`,
+  `--profile {lite,balanced,full}`, throttling vía `effectiveMaximumFPS()`
+  con límite por batería, EWMH fullscreen correcto y detección con UPower +
+  sysfs. Ver [`docs/BATTERY.md`](docs/BATTERY.md).
+* **Catálogo local** — `Library` en C++ escanea las raíces de Workshop,
+  cachea en `~/.cache/linux-wallpaperengine/library.json` y expone
+  `--list-library/--search/--type/--json/--refresh` y `make-previews`.
+  Ver [`docs/CATALOG.md`](docs/CATALOG.md).
+* **Helper `we-wallpaper`** — apply/restore, playlists con señales, cambio de
+  tema en cascada (rofi → dmenu → fzf → terminal), favoritos, tags,
+  importación y props por fondo. Ver [`docs/PLAYLIST.md`](docs/PLAYLIST.md),
+  [`docs/SWITCH-THEME.md`](docs/SWITCH-THEME.md).
+* **MPRIS + idle-pause + `fetch`** — player D-Bus para controles externos,
+  pausa por inactividad y descarga de vídeos/imágenes sueltas.
+  Ver [`docs/MPRIS.md`](docs/MPRIS.md).
+* **Galería en Quickshell** — `contrib/quickshell-gallery/`: biblioteca local
+  con filtros y contadores, favoritos, props por fondo y pestaña **Explorar**
+  con bing / wallhaven / motionbgs / minimal, instalar, borrar y cargar más.
+  Ver [`docs/GUI.md`](docs/GUI.md).
+* **Store online** — reutiliza el comportamiento descrito en
+  [antwny/aura](https://github.com/antwny/aura) (GPL-3.0, como este proyecto),
+  reimplementado desde cero en el helper. Ver [`docs/CATALOG.md`](docs/CATALOG.md).
+
+**Cómo se usa aquí:** se compila el motor de este fork y el helper se instala en
+`~/.local/bin/we-wallpaper`; la galería es un módulo de Quickshell aparte, así
+que nada de esto ata el motor a un compositor concreto (DWM/X11 funciona igual
+que en otros X11).
+
+---
+
 ## 📦 System Requirements
 
 To compile and run this, you'll need:
