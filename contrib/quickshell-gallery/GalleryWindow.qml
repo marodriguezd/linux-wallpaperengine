@@ -176,6 +176,102 @@ FloatingWindow {
                     text: "No wallpapers: run we-wallpaper refresh + gallery-json"
                 }
             }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 200
+                visible: root.galleryModel.selectedId !== ""
+                color: Theme.controlNormalFill
+                radius: 8
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            text: "Properties: " + root.galleryModel.selectedId
+                            font.bold: true
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        ShellButton {
+                            label: "Save"
+                            onActivated: root.galleryModel.saveProps()
+                        }
+
+                        ShellButton {
+                            label: "Apply"
+                            primary: true
+                            onActivated: root.galleryModel.applySelected()
+                        }
+                    }
+
+                    Flickable {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        contentHeight: propsColumn.implicitHeight
+                        clip: true
+
+                        Column {
+                            id: propsColumn
+                            width: parent.width
+                            spacing: 4
+
+                            Repeater {
+                                model: root.galleryModel.props
+
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    width: propsColumn.width
+                                    spacing: 8
+
+                                    UiText {
+                                        Layout.preferredWidth: 220
+                                        elide: Text.ElideRight
+                                        text: (modelData.text || modelData.name) + (modelData.saved ? " *" : "")
+                                    }
+
+                                    PanelToggleSwitch {
+                                        visible: modelData.type === "boolean" || modelData.type === "bool"
+                                        accessibleName: modelData.text || modelData.name
+                                        checked: {
+                                            const p = root.galleryModel.pendingEdits[modelData.name];
+                                            const v = (p !== undefined) ? p : modelData.value;
+                                            return v === "1" || v === "true";
+                                        }
+                                        onToggled: root.galleryModel.editProp(modelData.name, checked ? "0" : "1")
+                                    }
+
+                                    TextInput {
+                                        visible: !(modelData.type === "boolean" || modelData.type === "bool")
+                                        Layout.fillWidth: true
+                                        color: Theme.controlFocusText
+                                        selectionColor: Theme.accent
+                                        selectedTextColor: Theme.accentText
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.inputFontSize
+                                        text: modelData.value || ""
+                                        onTextChanged: root.galleryModel.editProp(modelData.name, text)
+                                    }
+                                }
+                            }
+
+                            UiText {
+                                visible: root.galleryModel.props.length === 0
+                                text: "No properties (video) or failed to read"
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

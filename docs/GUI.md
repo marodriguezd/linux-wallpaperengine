@@ -15,6 +15,12 @@ Módulo en `~/.config/quickshell/gallery/` (nunca en managed):
   `IpcHandler target gallery` (`open/close/toggle/count`).
 * Hotkey `SUPER+SHIFT+G` → `qs ipc ... call gallery toggle`
   (junto a `SUPER+SHIFT+W` de randomize).
+* Pill en `DwmPanel` (icono ) con popupRequested + toggle,
+  coordinado con el resto de popups vía `selectPanelPopup`.
+* Panel de propiedades por fondo: `we-wallpaper props <id>` lista
+  (`name|type|text|value|saved?`); toggles para boolean, texto para el
+  resto; Save guarda en `props/<id>.conf` (auto-cargado al aplicar),
+  Apply re-aplica con overrides.
 
 Fuente de datos: `we-wallpaper gallery-json` → `{version, items[]}`
 con `thumb` = `thumbs/<id>.png` o preview del workshop.

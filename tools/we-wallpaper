@@ -200,9 +200,10 @@ apply_wallpaper() {
 	    ;;
     esac
 
+    # overrides por wallpaper (props/<id>.conf), solo modo fondo fijo
+    load_saved_props "$wallpaper_id" flags
+
     # shellcheck disable=SC2086
-    # NOTE: env es obligatorio; bash no reconoce VAR=val salidos de una
-    # expansión ("${array[@]}" cmd trataría el primero como comando)
     env "${CURSOR_ENV[@]}" nohup $ENGINE \
 	--screen-root "$screen" \
 	--bg "$wallpaper_id" \
@@ -249,6 +250,9 @@ apply_all() {
 	    flags+=(--disable-particles)
 	    ;;
     esac
+
+    # overrides por wallpaper (props/<id>.conf), solo modo fondo fijo
+    load_saved_props "$wallpaper_id" flags
 
     # Un solo proceso con N pares --screen-root/--bg: evita la carrera del
     # root-pixmap de N procesos concurrentes (visible en multi-head i3/bspwm)
@@ -681,6 +685,88 @@ status() {
     fi
 }
 
+PROPS_DIR="$HOME/.config/we-wallpaper/props"
+
+# Fase GUI-2: props <id> [name=value ...]. Sin args lista propiedades
+# (engine --list-properties) como TSV name|type|text|value|saved[*];
+# con args guarda overrides en props/<id>.conf (auto-cargados al aplicar).
+props() {
+    local id="$1"; shift
+    [ -n "$id" ] || { echo "Uso: we-wallpaper props <id> [name=value ...]"; return 1; }
+    [ -d "$WE_DIR/$id" ] || { echo "Wallpaper '$id' no encontrado"; return 1; }
+    local saved="$PROPS_DIR/$id.conf"
+    if [ $# -eq 0 ]; then
+	SAVED="$saved" "$ENGINE" --list-properties "$id" --assets-dir "$ASSETS_DIR" 2>/dev/null \
+	    | python3 -c "
+import json, os, sys
+saved = {}
+sp = os.environ.get('SAVED', '')
+if sp and os.path.isfile(sp):
+    for line in open(sp):
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        k, v = line.split('=', 1)
+        saved[k.strip()] = v.strip()
+name = typ = text = value = None
+def flush():
+    if name is None:
+        return
+    v = saved.get(name, value or '')
+    mark = '*' if name in saved else ''
+    print('%s\t%s\t%s\t%s\t%s' % (name, typ or 'unknown', text or name, v, mark))
+for line in sys.stdin:
+    line = line.rstrip('\n')
+    if line and not line.startswith((' ', '\t')) and ' - ' in line:
+        flush()
+        name, typ = [s.strip() for s in line.split(' - ', 1)]
+        text = value = None
+    elif line.strip().startswith('Text:'):
+        text = line.split('Text:', 1)[1].strip()
+    elif line.strip().startswith('Value:'):
+        value = line.split('Value:', 1)[1].strip()
+flush()
+"
+	return 0
+    fi
+    mkdir -p "$PROPS_DIR" || return 1
+    [ -f "$saved" ] || printf '# overrides de %s (auto-cargados al aplicar)\n' "$id" > "$saved"
+    local kv k v
+    for kv in "$@"; do
+	[[ "$kv" == *"="* ]] || { echo "Ignorado (falta =): $kv"; continue; }
+	k="${kv%%=*}"; v="${kv#*=}"
+	[ -n "$k" ] || continue
+	if grep -q "^${k}=" "$saved" 2>/dev/null; then
+	    sed -i "s|^${k}=.*|${k}=${v}|" "$saved"
+	else
+	    printf '%s=%s\n' "$k" "$v" >> "$saved"
+	fi
+	echo "saved: $k=$v"
+    done
+}
+
+props_clear() {
+    local id="$1"
+    [ -n "$id" ] || { echo "Uso: we-wallpaper props-clear <id>"; return 1; }
+    rm -f "$PROPS_DIR/$id.conf" && echo "props de $id borrados"
+}
+
+# Flags --set-property desde props/<id>.conf (modo array nameref).
+load_saved_props() {
+    local id="$1" arr="$2"
+    local file="$PROPS_DIR/$id.conf" k v
+    [ -f "$file" ] || return 0
+    local -n out="$arr"
+    while IFS= read -r line || [ -n "$line" ]; do
+	line="${line%$'\r'}"
+	[[ "$line" =~ ^[[:space:]]*#.*$ || "$line" != *"="* ]] && continue
+	k="${line%%=*}"; v="${line#*=}"
+	k="${k//[[:space:]]/}"
+	[ -n "$k" ] || continue
+	out+=(--set-property "$k=$v")
+    done < "$file"
+}
+
 # Fase GUI-1: vuelca la caché a JSON plano para la galería quickshell.
 # [{id,title,type,valid,thumb}] con thumb = thumbs/<id>.png o preview.
 gallery_json() {
@@ -782,6 +868,8 @@ usage() {
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
     echo ""
     echo "  list                                  Listar wallpapers (caché Fase 2)"
+    echo "  props <id> [k=v ...]                  Ver/guardar propiedades por fondo"
+    echo "  props-clear <id>                      Borrar overrides guardados"
     echo "  gallery-json                          Volcar JSON para galería quickshell"
     echo "  apply-id <id> [modo]                  Aplicar por id (para clicks)"
     echo "  fetch <url> [id]                      Descargar video/imagen web"
@@ -809,6 +897,8 @@ usage() {
 
 case "${1:-}" in
     list)       list_wallpapers ;;
+    props)      props "$2" "${@:3}" ;;
+    props-clear) props_clear "$2" ;;
     gallery-json) gallery_json ;;
     apply-id)   apply_id "$2" "$3" ;;
     fetch)      fetch_url "$2" "$3" ;;
