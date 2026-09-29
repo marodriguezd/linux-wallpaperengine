@@ -555,6 +555,36 @@ for it in json.load(open('$CACHE_FILE'))['items']:
     apply_wallpaper "$id" "$mode" "$(get_primary_screen)"
 }
 
+# Fase GUI-3: grid rofi con thumbs para cualquier X11.
+# Sin rofi o sin display cae al switch en cascada.
+grid() {
+    local mode="${1:-${WE_MODE:-lite}}"
+    if command -v rofi >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+	ensure_cache || { echo "Sin catálogo: ejecuta 'we-wallpaper refresh'"; return 1; }
+	local picked
+	picked=$(CACHE_FILE="$CACHE_FILE" THUMBS_DIR="$THUMBS_DIR" python3 -c "
+import json, os
+thumbs = os.environ.get('THUMBS_DIR', '')
+for it in json.load(open(os.environ.get('CACHE_FILE', '')))['items']:
+    tid = it.get('id', '?')
+    tp = os.path.join(thumbs, tid + '.png')
+    if not os.path.isfile(tp):
+        pv = it.get('preview', '')
+        pp = os.path.join(it.get('path', ''), pv) if pv else ''
+        tp = pp if pp and os.path.isfile(pp) else ''
+    label = '%s [%s] %s' % (tid, it.get('type', 'unknown'), it.get('title') or tid)
+    if tp:
+        print('%s\0icon\x1f%s' % (label, tp))
+    else:
+        print(label)
+" | rofi -dmenu -i -p "Wallpaper" -show-icons 2>/dev/null | awk '{print $1}')
+	[ -z "$picked" ] && return 1
+	apply_wallpaper "$picked" "$mode" "$(get_primary_screen)"
+	return $?
+    fi
+    switch_wallpaper "$mode"
+}
+
 # Fase 3: preset cuyo normbgcolor más se parece al color dominante de la imagen.
 # Solo lee themes.toml (usuario o managed), no escribe nada.
 pick_nearest_preset() {
@@ -651,6 +681,43 @@ status() {
     fi
 }
 
+# Fase GUI-1: vuelca la caché a JSON plano para la galería quickshell.
+# [{id,title,type,valid,thumb}] con thumb = thumbs/<id>.png o preview.
+gallery_json() {
+    local out="${GALLERY_JSON:-$HOME/.config/dwm-titus/gallery-library.json}"
+    ensure_cache || { echo "Sin catálogo: ejecuta 'we-wallpaper refresh'"; return 1; }
+    mkdir -p "$(dirname "$out")" || return 1
+    CACHE_FILE="$CACHE_FILE" THUMBS_DIR="$THUMBS_DIR" OUT="$out" python3 -c "
+import json, os
+cache = json.load(open(os.environ['CACHE_FILE']))
+thumbs = os.environ['THUMBS_DIR']
+items = []
+for it in cache.get('items', []):
+    tid = it.get('id', '')
+    tp = os.path.join(thumbs, tid + '.png')
+    if not os.path.isfile(tp):
+        pv, pp = it.get('preview', ''), ''
+        if pv:
+            pp = os.path.join(it.get('path', ''), pv)
+        tp = pp if pp and os.path.isfile(pp) else ''
+    items.append({
+        'id': tid,
+        'title': it.get('title') or tid,
+        'type': it.get('type', 'unknown'),
+        'valid': bool(it.get('valid', True)),
+        'thumb': tp,
+    })
+json.dump({'version': 1, 'items': items}, open(os.environ['OUT'], 'w'), indent=1, ensure_ascii=False)
+print('gallery: %d items -> %s' % (len(items), os.environ['OUT']))
+"
+}
+
+# Fase GUI-1: alias fino para clicks (modo via $2 o WE_MODE).
+apply_id() {
+    [ -n "${1:-}" ] || { echo "Uso: we-wallpaper apply-id <id> [modo]"; return 1; }
+    apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)"
+}
+
 # Fase MPRIS-plan: fetch <url> [id]. Video (mp4/webm/mov/m4v) -> carpeta
 # workshop con project.json + refresh de caché; imagen -> backgrounds-lab
 # para feh (el engine solo representa video/scene/web, no estáticos sueltos).
@@ -715,8 +782,11 @@ usage() {
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
     echo ""
     echo "  list                                  Listar wallpapers (caché Fase 2)"
+    echo "  gallery-json                          Volcar JSON para galería quickshell"
+    echo "  apply-id <id> [modo]                  Aplicar por id (para clicks)"
     echo "  fetch <url> [id]                      Descargar video/imagen web"
     echo "  switch [modo]                         Cambiador rofi>dmenu>fzf>terminal"
+    echo "  grid [modo]                           Grid rofi con thumbs (cae a switch)"
     echo "  refresh                               Reescanear workshop a la caché"
     echo "  make-previews [--force]               Generar thumbs en la caché"
     echo "  apply <id> [modo] [pantalla]          Aplicar wallpaper"
@@ -739,8 +809,11 @@ usage() {
 
 case "${1:-}" in
     list)       list_wallpapers ;;
+    gallery-json) gallery_json ;;
+    apply-id)   apply_id "$2" "$3" ;;
     fetch)      fetch_url "$2" "$3" ;;
     switch)     switch_wallpaper "$2" ;;
+    grid)       grid "$2" ;;
     refresh)    refresh_library ;;
     make-previews) make_previews "$2" ;;
     apply)      apply_wallpaper "$2" "$3" "$4" ;;
