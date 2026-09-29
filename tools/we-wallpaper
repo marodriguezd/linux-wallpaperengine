@@ -904,7 +904,9 @@ if n == 0:
 # catalog-get <ref> [id]: resuelve la ref a URL directa y reutiliza fetch.
 catalog_get() {
     local ref="${1:-}" id="${2:-}"
-    [ -n "$ref" ] || { echo "Uso: we-wallpaper catalog-get <ref> [id]"; return 1; }
+    [ -n "$ref" ] || { echo "Uso: we-wallpaper catalog-get <ref> [id|4k] [título]"; return 1; }
+    # $3 = título del catálogo (bonito en Local); con motionbgs $2 = calidad.
+    WE_FETCH_TITLE="${3:-}"
     local src="${ref%%:*}" key="${ref#*:}"
     case "$src" in
 	bing)
@@ -1074,7 +1076,7 @@ gallery_json() {
     local out="${GALLERY_JSON:-$HOME/.config/dwm-titus/gallery-library.json}"
     ensure_cache || { echo "Sin catálogo: ejecuta 'we-wallpaper refresh'"; return 1; }
     mkdir -p "$(dirname "$out")" || return 1
-    CACHE_FILE="$CACHE_FILE" THUMBS_DIR="$THUMBS_DIR" OUT="$out" python3 -c "
+    CACHE_FILE="$CACHE_FILE" THUMBS_DIR="$THUMBS_DIR" OUT="$out" TITLES_FILE="$TITLES_FILE" python3 -c "
 import json, os
 def hum(n):
     for u in ('B', 'KB', 'MB', 'GB'):
@@ -1096,6 +1098,10 @@ def fsize(p):
     except OSError:
         pass
     return 0
+try:
+    titles = json.load(open(os.environ['TITLES_FILE']))
+except Exception:
+    titles = {}
 cache = json.load(open(os.environ['CACHE_FILE']))
 thumbs = os.environ['THUMBS_DIR']
 items = []
@@ -1109,7 +1115,7 @@ for it in cache.get('items', []):
         tp = pp if pp and os.path.isfile(pp) else ''
     items.append({
         'id': tid,
-        'title': it.get('title') or tid,
+        'title': titles.get(tid) or it.get('title') or tid,
         'type': it.get('type', 'unknown'),
         'valid': bool(it.get('valid', True)),
         'favorite': bool(it.get('favorite', False)),
@@ -1127,7 +1133,7 @@ if os.path.isdir(lab):
             fp = os.path.join(lab, f)
             items.append({
                 'id': 'img-' + stem,
-                'title': stem,
+                'title': titles.get('img-' + stem) or titles.get(stem) or stem.replace('_', ' '),
                 'type': 'image',
                 'valid': True,
                 'favorite': False,
@@ -1186,10 +1192,10 @@ register_video_file() {
     if ! validate_video "$dir/$file"; then
 	rm -rf "$dir"; echo "No es un video válido"; return 1
     fi
-    ID="$id" FILE="$file" DESC="$desc" DIR="$dir" python3 -c "
+    ID="$id" FILE="$file" DESC="$desc" DIR="$dir" TITLE="${WE_FETCH_TITLE:-$id}" python3 -c "
 import json, os
 json.dump({
-    'title': os.environ['ID'],
+    'title': os.environ['TITLE'] or os.environ['ID'],
     'type': 'video',
     'file': os.environ['FILE'],
     'description': os.environ.get('DESC', ''),
@@ -1254,6 +1260,50 @@ print()
 # Fase MPRIS-plan: fetch <url> [id]. Video (mp4/webm/mov/m4v) -> carpeta
 # workshop con project.json + refresh de caché; imagen -> backgrounds-lab
 # para feh (el engine solo representa video/scene/web, no estáticos sueltos).
+# Títulos bonitos para lo instalado (id -> título del catálogo), para que
+# Local no muestre "img-mlope9" ni "motionbgs-10050-hd".
+TITLES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/titles.json"
+
+save_title() {
+    [ -n "${WE_FETCH_TITLE:-}" ] || return 0
+    mkdir -p "$(dirname "$TITLES_FILE")" 2>/dev/null
+    TITLES_FILE="$TITLES_FILE" TID="$1" TTITLE="$WE_FETCH_TITLE" python3 -c "
+import json, os
+p = os.environ['TITLES_FILE']
+try:
+    d = json.load(open(p))
+except Exception:
+    d = {}
+d[os.environ['TID']] = os.environ['TTITLE']
+tmp = p + '.tmp'
+json.dump(d, open(tmp, 'w'), indent=1, ensure_ascii=False)
+os.replace(tmp, p)
+" 2>/dev/null
+}
+
+# Miniatura inmediata de un vídeo recién instalado (ffmpeg, sin display).
+ensure_thumb() {
+    local id="$1" thumb="$THUMBS_DIR/$id.png"
+    [ -s "$thumb" ] && return 0
+    command -v ffmpeg >/dev/null 2>&1 || return 0
+    local wfile
+    wfile=$(ID="$id" CACHE_FILE="$CACHE_FILE" python3 -c "
+import json, os
+try:
+    c = json.load(open(os.environ['CACHE_FILE']))
+except Exception:
+    raise SystemExit
+for it in c.get('items', []):
+    if it.get('id') == os.environ['ID'] and it.get('file'):
+        print(os.path.join(it.get('path', ''), it['file']))
+        break
+" 2>/dev/null)
+    [ -n "$wfile" ] && [ -f "$wfile" ] || return 0
+    mkdir -p "$THUMBS_DIR" 2>/dev/null
+    ffmpeg -nostdin -y -loglevel error -i "$wfile" -vframes 1 "$thumb" 2>/dev/null && [ -s "$thumb" ] \
+	&& echo "thumb: $id"
+}
+
 fetch_url() {
     local url="$1" want_id="${2:-}"
     [ -z "$url" ] && { echo "Uso: we-wallpaper fetch <url> [id]"; return 1; }
@@ -1302,6 +1352,8 @@ fetch_url() {
 		rm -rf "$dir"; echo "Descarga fallida"; return 1
 	    fi
 	    register_video_file "$dir" "$id" "$file" "fetched $url" || return 1
+	    save_title "$id"
+	    ensure_thumb "$id"
 	    ;;
 	jpg|jpeg|png|webp|bmp)
 	    local lab="$HOME/Pictures/backgrounds-lab"
@@ -1309,6 +1361,7 @@ fetch_url() {
 	    local dest="$lab/$id.$ext"
 	    [ -f "$dest" ] && { echo "Ya existe: $dest"; return 1; }
 	    dl_run "$dest" "$url" || { echo "Descarga fallida"; return 1; }
+	    save_title "$id"
 	    echo "Imagen en $dest (feh --bg-fill $dest)"
 	    ;;
 	*)
@@ -1410,7 +1463,7 @@ EOF
     apply-id)   apply_id "$2" "$3" ;;
     fetch)      fetch_url "$2" "$3" ;;
     catalog)    catalog "$2" "$3" "$4" ;;
-    catalog-get) catalog_get "$2" "$3" ;;
+    catalog-get) catalog_get "$2" "$3" "$4" ;;
     import)     import_video "$2" "$3" "$4" "$5" ;;
     switch)     switch_wallpaper "$2" ;;
     grid)       grid "$2" ;;

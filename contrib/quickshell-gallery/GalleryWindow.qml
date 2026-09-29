@@ -416,7 +416,7 @@ FloatingWindow {
                                 return "Instalando…";
                             }
                             if (root.galleryModel.installedLocalId(modelData.ref) !== "") {
-                                return "✓ Instalado (aplicar)";
+                                return "✓ Instalado";
                             }
                             return "⬇ Instalar";
                         }

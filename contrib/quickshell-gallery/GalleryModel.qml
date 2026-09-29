@@ -284,6 +284,9 @@ Scope {
         if (src === "motionbgs") {
             args.push(root.exploreQuality);
         }
+        if (item.title) {
+            args.push(item.title);
+        }
         downloadProcess.command = args;
         downloadProcess.running = true;
     }
