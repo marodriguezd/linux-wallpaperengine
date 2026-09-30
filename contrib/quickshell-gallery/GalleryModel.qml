@@ -33,6 +33,13 @@ Scope {
     property string selectedId: ""
     property var props: []
     property var pendingEdits: ({})
+    // Power panel: pending values (0/empty = auto/none), applied via applyPower()
+    property string powerProfile: ""
+    property int powerAcFps: 0
+    property int powerBattFps: 10
+    property bool powerPauseOnBatt: false
+    property int powerIdleMin: 0
+    property bool powerLoaded: false
     property string libraryPath: (Quickshell.env("HOME") || "") + "/.config/dwm-titus/gallery-library.json"
 
     readonly property var categories: ["anime", "nature", "sci-fi", "cyberpunk", "gaming", "minimalist"]
@@ -431,6 +438,65 @@ Scope {
     function refresh() : void {
         refreshProcess.running = true;
         currentProcess.running = true;
+        powerProcess.command = ["we-wallpaper", "power"];
+        powerProcess.running = true;
+    }
+
+    readonly property var acFpsSteps: [0, 15, 30, 60, 120, 144]
+    readonly property var battFpsSteps: [5, 10, 15, 30]
+    readonly property var idleMinSteps: [0, 5, 10, 15, 30, 60]
+
+    function acFpsLabel() : string {
+        return root.powerAcFps <= 0 ? "auto" : String(root.powerAcFps);
+    }
+
+    function idleMinLabel() : string {
+        return root.powerIdleMin <= 0 ? "off" : String(root.powerIdleMin) + " min";
+    }
+
+    function stepAcFps(dir : int) : void {
+        let i = root.acFpsSteps.indexOf(root.powerAcFps);
+        if (i === -1) {
+            i = 0;
+        }
+        i = Math.max(0, Math.min(root.acFpsSteps.length - 1, i + dir));
+        root.powerAcFps = root.acFpsSteps[i];
+    }
+
+    function stepBattFps(dir : int) : void {
+        let i = root.battFpsSteps.indexOf(root.powerBattFps);
+        if (i === -1) {
+            i = 1;
+        }
+        i = Math.max(0, Math.min(root.battFpsSteps.length - 1, i + dir));
+        root.powerBattFps = root.battFpsSteps[i];
+    }
+
+    function stepIdleMin(dir : int) : void {
+        let i = root.idleMinSteps.indexOf(root.powerIdleMin);
+        if (i === -1) {
+            i = 0;
+        }
+        i = Math.max(0, Math.min(root.idleMinSteps.length - 1, i + dir));
+        root.powerIdleMin = root.idleMinSteps[i];
+    }
+
+    function setPowerProfile(p : string) : void {
+        root.powerProfile = (root.powerProfile === p) ? "" : p;
+    }
+
+    function applyPower() : void {
+        const args = [
+            "we-wallpaper", "power-set",
+            "WE_PROFILE=" + root.powerProfile,
+            "WE_FPS=" + (root.powerAcFps > 0 ? String(root.powerAcFps) : ""),
+            "WE_FPS_BATTERY=" + String(root.powerBattFps),
+            "WE_PAUSE_ON_BATTERY=" + (root.powerPauseOnBatt ? "1" : "0"),
+            "WE_IDLE_PAUSE=" + String(root.powerIdleMin)
+        ];
+        root.status = "guardando energía...";
+        powerSaveProcess.command = args;
+        powerSaveProcess.running = true;
     }
 
     FileView {
@@ -481,6 +547,63 @@ Scope {
         running: false
         stdout: StdioCollector {
             onStreamFinished: root.currentId = this.text.trim()
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: powerProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const lines = this.text.split("\n");
+
+                for (let i = 0; i < lines.length; i++) {
+                    const eq = lines[i].indexOf("=");
+
+                    if (eq === -1) {
+                        continue;
+                    }
+
+                    const k = lines[i].slice(0, eq).trim();
+                    const v = lines[i].slice(eq + 1).trim();
+
+                    if (k === "WE_PROFILE") {
+                        root.powerProfile = (v === "lite" || v === "balanced" || v === "full") ? v : "";
+                    } else if (k === "WE_FPS") {
+                        const n = parseInt(v, 10);
+                        root.powerAcFps = isNaN(n) ? 0 : n;
+                    } else if (k === "WE_FPS_BATTERY") {
+                        const n = parseInt(v, 10);
+                        root.powerBattFps = isNaN(n) ? 10 : n;
+                    } else if (k === "WE_PAUSE_ON_BATTERY") {
+                        root.powerPauseOnBatt = (v === "1");
+                    } else if (k === "WE_IDLE_PAUSE") {
+                        const n = parseInt(v, 10);
+                        root.powerIdleMin = isNaN(n) ? 0 : n;
+                    }
+                }
+
+                root.powerLoaded = true;
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: powerSaveProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text.split("\n")[0];
+                // flags only take effect on (re)launch: reapply current
+                if (root.currentId !== "") {
+                    applyProcess.command = ["we-wallpaper", "apply-id", root.currentId];
+                    applyProcess.running = true;
+                } else {
+                    refreshProcess.running = true;
+                }
+            }
         }
         stderr: StdioCollector {}
     }

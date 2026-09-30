@@ -221,11 +221,153 @@ FloatingWindow {
                 }
             }
 
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: powerCol.implicitHeight + 20
+                visible: root.galleryModel.mode === "local" && root.galleryModel.powerLoaded
+                color: Theme.controlNormalFill
+                radius: 8
+
+                ColumnLayout {
+                    id: powerCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 10
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            text: "Power"
+                            font.bold: true
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        ShellButton {
+                            label: "Apply"
+                            primary: true
+                            onActivated: root.galleryModel.applyPower()
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            Layout.preferredWidth: 110
+                            text: "Perfil"
+                        }
+
+                        Repeater {
+                            model: [
+                                { id: "lite", label: "Lite" },
+                                { id: "balanced", label: "Balanced" },
+                                { id: "full", label: "Full" }
+                            ]
+
+                            delegate: ShellButton {
+                                required property var modelData
+                                label: modelData.label
+                                primary: root.galleryModel.powerProfile === modelData.id
+                                onActivated: root.galleryModel.setPowerProfile(modelData.id)
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            Layout.preferredWidth: 110
+                            text: "Enchufado (FPS)"
+                        }
+
+                        ShellButton {
+                            label: "-"
+                            onActivated: root.galleryModel.stepAcFps(-1)
+                        }
+
+                        UiText {
+                            Layout.preferredWidth: 52
+                            text: root.galleryModel.acFpsLabel()
+                        }
+
+                        ShellButton {
+                            label: "+"
+                            onActivated: root.galleryModel.stepAcFps(1)
+                        }
+
+                        UiText {
+                            Layout.preferredWidth: 110
+                            text: "Batería (FPS)"
+                        }
+
+                        ShellButton {
+                            label: "-"
+                            onActivated: root.galleryModel.stepBattFps(-1)
+                        }
+
+                        UiText {
+                            Layout.preferredWidth: 40
+                            text: String(root.galleryModel.powerBattFps)
+                        }
+
+                        ShellButton {
+                            label: "+"
+                            onActivated: root.galleryModel.stepBattFps(1)
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        ShellButton {
+                            label: "Pausar en batería"
+                            primary: root.galleryModel.powerPauseOnBatt
+                            onActivated: root.galleryModel.powerPauseOnBatt = !root.galleryModel.powerPauseOnBatt
+                        }
+
+                        UiText {
+                            text: "Sin input (X11)"
+                        }
+
+                        ShellButton {
+                            label: "-"
+                            onActivated: root.galleryModel.stepIdleMin(-1)
+                        }
+
+                        UiText {
+                            Layout.preferredWidth: 64
+                            text: root.galleryModel.idleMinLabel()
+                        }
+
+                        ShellButton {
+                            label: "+"
+                            onActivated: root.galleryModel.stepIdleMin(1)
+                        }
+                    }
+
+                    UiText {
+                        Layout.fillWidth: true
+                        color: Theme.menuMutedText
+                        text: "Apply guarda y reaplica el fondo actual. Un export en el entorno gana al fichero."
+                    }
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
                 visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreSource === "motionbgs"
-
                 Repeater {
                     model: [
                         { id: "", label: "todo" },

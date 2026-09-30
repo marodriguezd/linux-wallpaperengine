@@ -59,6 +59,13 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
 * `remove <id> [--force]`: borra items del store (`motionbgs-*`,
   `bing-*`, `img-*`) con su thumb y título, y refresca. Los wallpapers
   reales del workshop se niegan sin `--force`.
+* Panel Power (solo Local): perfil Lite/Balanced/Full, FPS enchufado
+  (`auto`/15/30/60/120/144), FPS batería (5/10/15/30), toggle de pausa
+  en batería y pausa por inactividad X11 (off/5–60 min). `Apply` guarda
+  en `~/.config/we-wallpaper/power.conf` vía `power-set` (validado,
+  atómico) y reaplica el fondo actual para que los flags surtan efecto.
+  CLI: `power` (K=V efectivo), `power-set CLAVE=VALOR...`. Un `export`
+  en el entorno gana siempre al fichero.
 * Steam/unsubscribe o borrado manual: el rescan no elimina la entrada,
   la marca `missing` (caché + `--list-library` con `(missing)` + `list`).
   La galería la atenúa con badge "no disponible", bloquea el click/Enter

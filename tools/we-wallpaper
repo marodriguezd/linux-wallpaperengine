@@ -28,6 +28,29 @@ CURSOR_ENV=()
 [ -n "${WE_CURSOR_SIZE:-}" ] && CURSOR_ENV+=("XCURSOR_SIZE=$WE_CURSOR_SIZE")
 STATE_DIR="$HOME/.config/we-wallpaper"
 STATE_FILE="$STATE_DIR/state.conf"
+# Fase Power: perfil de energía persistido. El fichero solo rellena las
+# variables NO exportadas en el entorno (export gana siempre).
+POWER_CONF="$STATE_DIR/power.conf"
+power_defaults() {
+    echo "WE_PROFILE=${WE_PROFILE:-}"
+    echo "WE_FPS=${WE_FPS:-}"
+    echo "WE_FPS_BATTERY=${WE_FPS_BATTERY:-10}"
+    echo "WE_PAUSE_ON_BATTERY=${WE_PAUSE_ON_BATTERY:-0}"
+    echo "WE_IDLE_PAUSE=${WE_IDLE_PAUSE:-0}"
+}
+load_power_conf() {
+    [ -f "$POWER_CONF" ] || return 0
+    local k v
+    while IFS='=' read -r k v; do
+	case "$k" in
+	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE)
+		# solo si el entorno no la trae puesta
+		eval "[ -n \"\${$k:-}\" ] || $k=\"\$v\""
+		;;
+	esac
+    done < "$POWER_CONF"
+}
+load_power_conf
 # Fase 2: catálogo (misma ruta que Library::cachePath del engine)
 CACHE_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/linux-wallpaperengine/library.json"
 THUMBS_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/linux-wallpaperengine/thumbs"
@@ -144,6 +167,10 @@ fork_flags() {
     # vaapi en NVIDIA evita el segfault de libcuda al cambiar de video
     if [ -n "${WE_HWDEC:-}" ]; then
 	printf '%s\n' "--hwdec" "$WE_HWDEC"
+    fi
+    # X11: pausa tras N minutos sin input (0 = desactivado)
+    if [[ "${WE_IDLE_PAUSE:-0}" =~ ^[0-9]+$ ]] && [ "$WE_IDLE_PAUSE" -ge 1 ] && [ "$WE_IDLE_PAUSE" -le 1440 ]; then
+	printf '%s\n' "--idle-pause" "$WE_IDLE_PAUSE"
     fi
 }
 
@@ -703,6 +730,74 @@ status() {
 current_id() {
     [ -f "$STATE_FILE" ] || return 1
     grep -E "^WALLPAPER_ID=" "$STATE_FILE" 2>/dev/null | cut -d= -f2
+}
+
+# Fase Power: muestra el perfil efectivo (entorno + power.conf) en K=V.
+power_show() {
+    power_defaults
+}
+
+# Fase Power: guarda claves validadas en power.conf. Solo lista blanca.
+power_set() {
+    [ -n "${1:-}" ] || { echo "Uso: we-wallpaper power-set CLAVE=VALOR ..."; return 1; }
+    mkdir -p "$STATE_DIR" || return 1
+    local kv k v ok=1
+    # carga lo actual para reescribir completo
+    local cur_profile="$WE_PROFILE" cur_fps="$WE_FPS" cur_batt="${WE_FPS_BATTERY:-10}"
+    local cur_pause="${WE_PAUSE_ON_BATTERY:-0}" cur_idle="${WE_IDLE_PAUSE:-0}"
+    for kv in "$@"; do
+	k="${kv%%=*}"; v="${kv#*=}"
+	[ "$k" != "$kv" ] || { echo "Ignorada (sin =): $kv"; ok=0; continue; }
+	case "$k" in
+	    WE_PROFILE)
+		case "$v" in
+		    ""|lite|balanced|full) cur_profile="$v" ;;
+		    *) echo "WE_PROFILE inválido: $v (lite|balanced|full|\"\")"; ok=0 ;;
+		esac
+		;;
+	    WE_FPS)
+		if [ -z "$v" ]; then
+		    cur_fps=""
+		elif [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -ge 1 ] && [ "$v" -le 240 ]; then
+		    cur_fps="$v"
+		else
+		    echo "WE_FPS inválido: $v (vacío=auto, 1-240)"; ok=0
+		fi
+		;;
+	    WE_FPS_BATTERY)
+		if [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -ge 0 ] && [ "$v" -le 240 ]; then
+		    cur_batt="$v"
+		else
+		    echo "WE_FPS_BATTERY inválido: $v (0-240)"; ok=0
+		fi
+		;;
+	    WE_PAUSE_ON_BATTERY)
+		case "$v" in
+		    0|1) cur_pause="$v" ;;
+		    *) echo "WE_PAUSE_ON_BATTERY inválido: $v (0|1)"; ok=0 ;;
+		esac
+		;;
+	    WE_IDLE_PAUSE)
+		if [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -ge 0 ] && [ "$v" -le 1440 ]; then
+		    cur_idle="$v"
+		else
+		    echo "WE_IDLE_PAUSE inválido: $v (0-1440 min, 0=off)"; ok=0
+		fi
+		;;
+	    *)
+		echo "Clave desconocida: $k"; ok=0
+		;;
+	esac
+    done
+    [ "$ok" = "1" ] || return 1
+    cat > "$POWER_CONF" << EOF
+WE_PROFILE=$cur_profile
+WE_FPS=$cur_fps
+WE_FPS_BATTERY=$cur_batt
+WE_PAUSE_ON_BATTERY=$cur_pause
+WE_IDLE_PAUSE=$cur_idle
+EOF
+    echo "power: guardado en $POWER_CONF (aplica al próximo apply/restore)"
 }
 
 # Fase GUI-super: catálogos web estilo Aura (solo APIs oficiales JSON).
@@ -1463,12 +1558,15 @@ usage() {
     echo "  restore                               Restaurar ultimo wallpaper guardado"
     echo "  stop                                  Detener"
     echo "  status                                Ver estado"
+    echo "  power                                 Ver perfil de energía (K=V)"
+    echo "  power-set CLAVE=VALOR ...             Guardar perfil de energía"
     echo ""
     echo "Modos: normal (default), lite, no-particles"
     echo "Env X11: WE_DIR WE_ASSETS_DIR WE_ENGINE WE_BACKEND WE_MODE"
     echo "Env fork: WE_PROFILE=lite|balanced|full"
     echo "          WE_FPS=N (gana a todo)  WE_FPS_BATTERY=N (0=pausar)"
-    echo "          WE_PAUSE_ON_BATTERY=1"
+    echo "          WE_PAUSE_ON_BATTERY=1  WE_IDLE_PAUSE=min (X11, 0=off)"
+    echo "          (export gana a power.conf; power-set escribe power.conf)"
     echo "Env tema: WE_THEME=<preset>|auto|\"\"  WE_THEME_ENABLED=0|1  WE_WALLPAPER_REGISTER=0|1"
     echo "Env video: WE_HWDEC=auto|vaapi|nvdec|cuda|... (vaapi evita segfault libcuda en NVIDIA)"
     echo "Refresh detectado: ${fps}Hz"
@@ -1545,5 +1643,7 @@ EOF
     stop)       stop_wallpaper ;;
     status)     status ;;
     current-id) current_id ;;
+    power)      power_show ;;
+    power-set)  shift; power_set "$@" ;;
     *)          usage ;;
 esac
