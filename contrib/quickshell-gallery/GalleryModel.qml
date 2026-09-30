@@ -54,6 +54,31 @@ Scope {
 
     readonly property var categories: ["anime", "nature", "sci-fi", "cyberpunk", "gaming", "minimalist"]
 
+    function categoryCount(cat : string) : int {
+        let n = 0;
+
+        for (let i = 0; i < root.items.length; i++) {
+            if (root.items[i] && root.categoryOf(root.items[i]) === cat) {
+                n++;
+            }
+        }
+
+        return n;
+    }
+
+    // moods with at least one wallpaper: dead chips never render
+    function activeCategories() : var {
+        const out = [];
+
+        for (let c = 0; c < root.categories.length; c++) {
+            if (root.categoryCount(root.categories[c]) > 0) {
+                out.push(root.categories[c]);
+            }
+        }
+
+        return out;
+    }
+
     function categoryOf(item) : string {
         if (!item) {
             return "";

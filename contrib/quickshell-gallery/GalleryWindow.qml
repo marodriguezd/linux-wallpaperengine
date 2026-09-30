@@ -209,18 +209,18 @@ FloatingWindow {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 8
-                visible: root.galleryModel.mode === "local" && root.galleryModel.categories.length > 0
+                visible: root.galleryModel.mode === "local" && root.galleryModel.activeCategories().length > 0
 
                 UiText {
                     text: "mood:"
                 }
 
                 Repeater {
-                    model: root.galleryModel.categories
+                    model: root.galleryModel.activeCategories()
 
                     delegate: ShellButton {
                         required property string modelData
-                        label: modelData
+                        label: modelData + " (" + root.galleryModel.categoryCount(modelData) + ")"
                         primary: root.galleryModel.categoryFilter === modelData
                         onActivated: root.galleryModel.setCategoryFilter(modelData)
                     }
