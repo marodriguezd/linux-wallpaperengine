@@ -37,13 +37,19 @@ power_defaults() {
     echo "WE_FPS_BATTERY=${WE_FPS_BATTERY:-10}"
     echo "WE_PAUSE_ON_BATTERY=${WE_PAUSE_ON_BATTERY:-0}"
     echo "WE_IDLE_PAUSE=${WE_IDLE_PAUSE:-0}"
+    echo "WE_BACKEND=${WE_BACKEND:-}"
+    echo "WE_LAYER=${WE_LAYER:-bottom}"
+    echo "WE_PAUSE_ACTIVE_ONLY=${WE_PAUSE_ACTIVE_ONLY:-0}"
+    echo "WE_PAUSE_IGNORE_APPID=${WE_PAUSE_IGNORE_APPID:-}"
+    echo "WE_NO_FULLSCREEN_PAUSE=${WE_NO_FULLSCREEN_PAUSE:-0}"
+    echo "WE_HWDEC=${WE_HWDEC:-auto}"
 }
 load_power_conf() {
     [ -f "$POWER_CONF" ] || return 0
     local k v
     while IFS='=' read -r k v; do
 	case "$k" in
-	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE)
+	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC)
 		# solo si el entorno no la trae puesta
 		eval "[ -n \"\${$k:-}\" ] || $k=\"\$v\""
 		;;
@@ -164,13 +170,36 @@ fork_flags() {
     elif [ -n "${WE_FPS_BATTERY:-}" ]; then
 	printf '%s\n' "--fps-battery" "$WE_FPS_BATTERY"
     fi
-    # vaapi en NVIDIA evita el segfault de libcuda al cambiar de video
-    if [ -n "${WE_HWDEC:-}" ]; then
+    # vaapi en NVIDIA evita el segfault de libcuda al cambiar de video.
+    # "auto" es el defecto del engine: no se emite para no ensuciar.
+    if [ -n "${WE_HWDEC:-}" ] && [ "$WE_HWDEC" != "auto" ]; then
 	printf '%s\n' "--hwdec" "$WE_HWDEC"
     fi
     # X11: pausa tras N minutos sin input (0 = desactivado)
     if [[ "${WE_IDLE_PAUSE:-0}" =~ ^[0-9]+$ ]] && [ "$WE_IDLE_PAUSE" -ge 1 ] && [ "$WE_IDLE_PAUSE" -le 1440 ]; then
 	printf '%s\n' "--idle-pause" "$WE_IDLE_PAUSE"
+    fi
+    # Wayland-only (en X11 el engine las ignoraría): solo se emiten con
+    # backend sway para no ensuciar la cmdline de X11
+    if [ "$(detect_backend)" = "sway" ]; then
+	case "${WE_LAYER:-bottom}" in
+	    background|bottom|top|overlay)
+		printf '%s\n' "--layer" "$WE_LAYER"
+		;;
+	esac
+	if [ "${WE_PAUSE_ACTIVE_ONLY:-0}" = "1" ]; then
+	    printf '%s\n' "--fullscreen-pause-only-active"
+	fi
+	if [ -n "${WE_PAUSE_IGNORE_APPID:-}" ]; then
+	    local app
+	    for app in ${WE_PAUSE_IGNORE_APPID//,/ }; do
+		printf '%s\n' "--fullscreen-pause-ignore-appid" "$app"
+	    done
+	fi
+    fi
+    # Ambas: no pausar con fullscreen (por defecto el engine pausa)
+    if [ "${WE_NO_FULLSCREEN_PAUSE:-0}" = "1" ]; then
+	printf '%s\n' "--no-fullscreen-pause"
     fi
 }
 
@@ -745,6 +774,9 @@ power_set() {
     # carga lo actual para reescribir completo
     local cur_profile="$WE_PROFILE" cur_fps="$WE_FPS" cur_batt="${WE_FPS_BATTERY:-10}"
     local cur_pause="${WE_PAUSE_ON_BATTERY:-0}" cur_idle="${WE_IDLE_PAUSE:-0}"
+    local cur_backend="$WE_BACKEND" cur_layer="${WE_LAYER:-bottom}"
+    local cur_active="${WE_PAUSE_ACTIVE_ONLY:-0}" cur_ignore="$WE_PAUSE_IGNORE_APPID"
+    local cur_nofs="${WE_NO_FULLSCREEN_PAUSE:-0}" cur_hwdec="${WE_HWDEC:-auto}"
     for kv in "$@"; do
 	k="${kv%%=*}"; v="${kv#*=}"
 	[ "$k" != "$kv" ] || { echo "Ignorada (sin =): $kv"; ok=0; continue; }
@@ -784,6 +816,42 @@ power_set() {
 		    echo "WE_IDLE_PAUSE inválido: $v (0-1440 min, 0=off)"; ok=0
 		fi
 		;;
+	    WE_BACKEND)
+		case "$v" in
+		    ""|sway|x11) cur_backend="$v" ;;
+		    *) echo "WE_BACKEND inválido: $v (vacío=auto, sway|x11)"; ok=0 ;;
+		esac
+		;;
+	    WE_LAYER)
+		case "$v" in
+		    background|bottom|top|overlay) cur_layer="$v" ;;
+		    *) echo "WE_LAYER inválido: $v (background|bottom|top|overlay)"; ok=0 ;;
+		esac
+		;;
+	    WE_PAUSE_ACTIVE_ONLY|WE_NO_FULLSCREEN_PAUSE)
+		case "$v" in
+		    0|1)
+			[ "$k" = "WE_PAUSE_ACTIVE_ONLY" ] && cur_active="$v" || cur_nofs="$v"
+			;;
+		    *) echo "$k inválido: $v (0|1)"; ok=0 ;;
+		esac
+		;;
+	    WE_PAUSE_IGNORE_APPID)
+		# texto libre separado por comas/espacios; vacío = nadie ignorado
+		if [[ "$v" =~ ^[A-Za-z0-9_.,\ -]*$ ]]; then
+		    cur_ignore="$v"
+		else
+		    echo "WE_PAUSE_IGNORE_APPID inválido: $v"; ok=0
+		fi
+		;;
+	    WE_HWDEC)
+		case "$v" in
+		    auto|auto-safe|auto-copy|no|vaapi|vaapi-copy|vdpau|nvdec|cuda|vulkan)
+			cur_hwdec="$v"
+			;;
+		    *) echo "WE_HWDEC inválido: $v"; ok=0 ;;
+		esac
+		;;
 	    *)
 		echo "Clave desconocida: $k"; ok=0
 		;;
@@ -796,6 +864,12 @@ WE_FPS=$cur_fps
 WE_FPS_BATTERY=$cur_batt
 WE_PAUSE_ON_BATTERY=$cur_pause
 WE_IDLE_PAUSE=$cur_idle
+WE_BACKEND=$cur_backend
+WE_LAYER=$cur_layer
+WE_PAUSE_ACTIVE_ONLY=$cur_active
+WE_PAUSE_IGNORE_APPID=$cur_ignore
+WE_NO_FULLSCREEN_PAUSE=$cur_nofs
+WE_HWDEC=$cur_hwdec
 EOF
     echo "power: guardado en $POWER_CONF (aplica al próximo apply/restore)"
 }
@@ -1560,6 +1634,7 @@ usage() {
     echo "  status                                Ver estado"
     echo "  power                                 Ver perfil de energía (K=V)"
     echo "  power-set CLAVE=VALOR ...             Guardar perfil de energía"
+    echo "  backend                               Detectar backend (sway|x11|unknown)"
     echo ""
     echo "Modos: normal (default), lite, no-particles"
     echo "Env X11: WE_DIR WE_ASSETS_DIR WE_ENGINE WE_BACKEND WE_MODE"
@@ -1645,5 +1720,6 @@ EOF
     current-id) current_id ;;
     power)      power_show ;;
     power-set)  shift; power_set "$@" ;;
+    backend)    detect_backend ;;
     *)          usage ;;
 esac

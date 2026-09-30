@@ -40,6 +40,16 @@ Scope {
     property bool powerPauseOnBatt: false
     property int powerIdleMin: 0
     property bool powerLoaded: false
+    // Power/Backend panels start collapsed so the grid keeps its height
+    property bool showPower: false
+    // Backend panel: override "" = auto-detect; detected filled at refresh
+    property string powerBackendOverride: ""
+    property string backendDetected: ""
+    property string powerLayer: "bottom"
+    property bool powerPauseActiveOnly: false
+    property string powerIgnoreAppid: ""
+    property bool powerFullscreenPause: true
+    property string powerHwdec: "auto"
     property string libraryPath: (Quickshell.env("HOME") || "") + "/.config/dwm-titus/gallery-library.json"
 
     readonly property var categories: ["anime", "nature", "sci-fi", "cyberpunk", "gaming", "minimalist"]
@@ -440,11 +450,22 @@ Scope {
         currentProcess.running = true;
         powerProcess.command = ["we-wallpaper", "power"];
         powerProcess.running = true;
+        backendProcess.command = ["we-wallpaper", "backend"];
+        backendProcess.running = true;
+    }
+
+    function effBackend() : string {
+        if (root.powerBackendOverride === "sway" || root.powerBackendOverride === "x11") {
+            return root.powerBackendOverride;
+        }
+        return root.backendDetected;
     }
 
     readonly property var acFpsSteps: [0, 15, 30, 60, 120, 144]
     readonly property var battFpsSteps: [5, 10, 15, 30]
     readonly property var idleMinSteps: [0, 5, 10, 15, 30, 60]
+    readonly property var hwdecSteps: ["auto", "vaapi-copy", "vaapi", "nvdec", "no"]
+    readonly property var layerSteps: ["background", "bottom", "top", "overlay"]
 
     function acFpsLabel() : string {
         return root.powerAcFps <= 0 ? "auto" : String(root.powerAcFps);
@@ -485,6 +506,32 @@ Scope {
         root.powerProfile = (root.powerProfile === p) ? "" : p;
     }
 
+    function cycleBackendOverride() : void {
+        if (root.powerBackendOverride === "") {
+            root.powerBackendOverride = "sway";
+        } else if (root.powerBackendOverride === "sway") {
+            root.powerBackendOverride = "x11";
+        } else {
+            root.powerBackendOverride = "";
+        }
+    }
+
+    function backendOverrideLabel() : string {
+        if (root.powerBackendOverride === "sway" || root.powerBackendOverride === "x11") {
+            return root.powerBackendOverride;
+        }
+        return "auto";
+    }
+
+    function stepHwdec(dir : int) : void {
+        let i = root.hwdecSteps.indexOf(root.powerHwdec);
+        if (i === -1) {
+            i = 0;
+        }
+        i = Math.max(0, Math.min(root.hwdecSteps.length - 1, i + dir));
+        root.powerHwdec = root.hwdecSteps[i];
+    }
+
     function applyPower() : void {
         const args = [
             "we-wallpaper", "power-set",
@@ -492,7 +539,13 @@ Scope {
             "WE_FPS=" + (root.powerAcFps > 0 ? String(root.powerAcFps) : ""),
             "WE_FPS_BATTERY=" + String(root.powerBattFps),
             "WE_PAUSE_ON_BATTERY=" + (root.powerPauseOnBatt ? "1" : "0"),
-            "WE_IDLE_PAUSE=" + String(root.powerIdleMin)
+            "WE_IDLE_PAUSE=" + String(root.powerIdleMin),
+            "WE_BACKEND=" + root.powerBackendOverride,
+            "WE_LAYER=" + root.powerLayer,
+            "WE_PAUSE_ACTIVE_ONLY=" + (root.powerPauseActiveOnly ? "1" : "0"),
+            "WE_PAUSE_IGNORE_APPID=" + root.powerIgnoreAppid,
+            "WE_NO_FULLSCREEN_PAUSE=" + (root.powerFullscreenPause ? "0" : "1"),
+            "WE_HWDEC=" + root.powerHwdec
         ];
         root.status = "guardando energía...";
         powerSaveProcess.command = args;
@@ -581,11 +634,32 @@ Scope {
                     } else if (k === "WE_IDLE_PAUSE") {
                         const n = parseInt(v, 10);
                         root.powerIdleMin = isNaN(n) ? 0 : n;
+                    } else if (k === "WE_BACKEND") {
+                        root.powerBackendOverride = (v === "sway" || v === "x11") ? v : "";
+                    } else if (k === "WE_LAYER") {
+                        root.powerLayer = (v === "background" || v === "top" || v === "overlay") ? v : "bottom";
+                    } else if (k === "WE_PAUSE_ACTIVE_ONLY") {
+                        root.powerPauseActiveOnly = (v === "1");
+                    } else if (k === "WE_PAUSE_IGNORE_APPID") {
+                        root.powerIgnoreAppid = v;
+                    } else if (k === "WE_NO_FULLSCREEN_PAUSE") {
+                        root.powerFullscreenPause = (v !== "1");
+                    } else if (k === "WE_HWDEC") {
+                        root.powerHwdec = (v === "") ? "auto" : v;
                     }
                 }
 
                 root.powerLoaded = true;
             }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: backendProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.backendDetected = this.text.trim()
         }
         stderr: StdioCollector {}
     }

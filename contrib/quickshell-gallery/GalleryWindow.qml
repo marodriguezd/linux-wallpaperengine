@@ -198,6 +198,12 @@ FloatingWindow {
                     primary: root.galleryModel.sortOrder !== ""
                     onActivated: root.galleryModel.toggleSort()
                 }
+
+                ShellButton {
+                    label: "Power"
+                    primary: root.galleryModel.showPower
+                    onActivated: root.galleryModel.showPower = !root.galleryModel.showPower
+                }
             }
 
             RowLayout {
@@ -224,7 +230,7 @@ FloatingWindow {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: powerCol.implicitHeight + 20
-                visible: root.galleryModel.mode === "local" && root.galleryModel.powerLoaded
+                visible: root.galleryModel.mode === "local" && root.galleryModel.powerLoaded && root.galleryModel.showPower
                 color: Theme.controlNormalFill
                 radius: 8
 
@@ -360,6 +366,201 @@ FloatingWindow {
                         Layout.fillWidth: true
                         color: Theme.menuMutedText
                         text: "Apply guarda y reaplica el fondo actual. Un export en el entorno gana al fichero."
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: backendCol.implicitHeight + 20
+                visible: root.galleryModel.mode === "local" && root.galleryModel.powerLoaded && root.galleryModel.showPower
+                color: Theme.controlNormalFill
+                radius: 8
+
+                ColumnLayout {
+                    id: backendCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 10
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            text: "Backend"
+                            font.bold: true
+                        }
+
+                        UiText {
+                            color: Theme.menuMutedText
+                            text: "detectado: " + (root.galleryModel.backendDetected || "?")
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
+                        ShellButton {
+                            label: "Apply"
+                            primary: true
+                            onActivated: root.galleryModel.applyPower()
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            Layout.preferredWidth: 110
+                            text: "Forzar"
+                        }
+
+                        ShellButton {
+                            label: root.galleryModel.backendOverrideLabel()
+                            primary: root.galleryModel.powerBackendOverride !== ""
+                            onActivated: root.galleryModel.cycleBackendOverride()
+                        }
+
+                        UiText {
+                            color: Theme.menuMutedText
+                            text: "efectivo: " + (root.galleryModel.effBackend() || "?")
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.galleryModel.effBackend() !== "sway"
+
+                        ShellButton {
+                            label: "Pausar en fullscreen"
+                            primary: root.galleryModel.powerFullscreenPause
+                            onActivated: root.galleryModel.powerFullscreenPause = !root.galleryModel.powerFullscreenPause
+                        }
+
+                        UiText {
+                            text: "Decode"
+                        }
+
+                        ShellButton {
+                            label: "-"
+                            onActivated: root.galleryModel.stepHwdec(-1)
+                        }
+
+                        UiText {
+                            Layout.preferredWidth: 92
+                            text: root.galleryModel.powerHwdec
+                        }
+
+                        ShellButton {
+                            label: "+"
+                            onActivated: root.galleryModel.stepHwdec(1)
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.galleryModel.effBackend() === "sway"
+
+                        UiText {
+                            Layout.preferredWidth: 110
+                            text: "Capa"
+                        }
+
+                        Repeater {
+                            model: root.galleryModel.layerSteps
+
+                            delegate: ShellButton {
+                                required property string modelData
+                                label: modelData
+                                primary: root.galleryModel.powerLayer === modelData
+                                onActivated: root.galleryModel.powerLayer = modelData
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.galleryModel.effBackend() === "sway"
+
+                        ShellButton {
+                            label: "Pausa solo si activa"
+                            primary: root.galleryModel.powerPauseActiveOnly
+                            onActivated: root.galleryModel.powerPauseActiveOnly = !root.galleryModel.powerPauseActiveOnly
+                        }
+
+                        UiText {
+                            text: "Ignorar app:"
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 30
+                            color: Theme.controlFocusFill
+                            border.color: Theme.controlNormalBorder
+                            radius: 6
+
+                            TextInput {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                verticalAlignment: TextInput.AlignVCenter
+                                color: Theme.controlFocusText
+                                selectionColor: Theme.accent
+                                selectedTextColor: Theme.accentText
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.inputFontSize
+                                clip: true
+                                text: root.galleryModel.powerIgnoreAppid
+                                onTextChanged: root.galleryModel.powerIgnoreAppid = text
+                            }
+
+                            UiText {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: root.galleryModel.powerIgnoreAppid === ""
+                                text: "firefox, steam..."
+                                color: Theme.placeholder
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+                        visible: root.galleryModel.effBackend() === "sway"
+
+                        UiText {
+                            text: "Decode"
+                        }
+
+                        ShellButton {
+                            label: "-"
+                            onActivated: root.galleryModel.stepHwdec(-1)
+                        }
+
+                        UiText {
+                            Layout.preferredWidth: 92
+                            text: root.galleryModel.powerHwdec
+                        }
+
+                        ShellButton {
+                            label: "+"
+                            onActivated: root.galleryModel.stepHwdec(1)
+                        }
+                    }
+
+                    UiText {
+                        Layout.fillWidth: true
+                        color: Theme.menuMutedText
+                        text: "En Intel el bueno es vaapi-copy. Forzar sway en X11 rompe el apply hasta revertirlo."
                     }
                 }
             }

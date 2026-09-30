@@ -66,6 +66,13 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
   atómico) y reaplica el fondo actual para que los flags surtan efecto.
   CLI: `power` (K=V efectivo), `power-set CLAVE=VALOR...`. Un `export`
   en el entorno gana siempre al fichero.
+* Panel Backend (solo Local, debajo de Power): backend detectado
+  (`backend`: sway|x11|unknown) + override auto/sway/x11; en X11:
+  toggle de pausa en fullscreen y selector de decode mpv (en Intel el
+  bueno es `vaapi-copy`, medido en `BATTERY.md`); en Sway: capa
+  (`background|bottom|top|overlay`), pausa solo-si-activa e ignore por
+  app_id (coma/espacio). Mismo Apply que Power (un solo `power-set` +
+  reaplicar). CLI: `backend`.
 * Steam/unsubscribe o borrado manual: el rescan no elimina la entrada,
   la marca `missing` (caché + `--list-library` con `(missing)` + `list`).
   La galería la atenúa con badge "no disponible", bloquea el click/Enter
