@@ -45,7 +45,11 @@ int runLibraryMode (WallpaperEngine::Application::ApplicationContext& appContext
 
     Library library;
 
-    if (librarySettings.refresh || !library.load ()) {
+    // always preload: scan() reconciles against these entries and marks
+    // vanished workshop dirs as missing instead of dropping them
+    const bool haveCache = library.load ();
+
+    if (librarySettings.refresh || !haveCache) {
 	library.scan ();
 
 	if (!library.save ()) {
@@ -83,7 +87,9 @@ int runLibraryMode (WallpaperEngine::Application::ApplicationContext& appContext
 	for (const auto& item : results) {
 	    std::cout << item.id << " [" << item.type << "] " << item.title;
 
-	    if (!item.valid) {
+	    if (item.missing) {
+		std::cout << " (missing)";
+	    } else if (!item.valid) {
 		std::cout << " (invalid)";
 	    }
 

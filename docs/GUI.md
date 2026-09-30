@@ -59,6 +59,11 @@ con `thumb` = `thumbs/<id>.png` o preview del workshop.
 * `remove <id> [--force]`: borra items del store (`motionbgs-*`,
   `bing-*`, `img-*`) con su thumb y título, y refresca. Los wallpapers
   reales del workshop se niegan sin `--force`.
+* Steam/unsubscribe o borrado manual: el rescan no elimina la entrada,
+  la marca `missing` (caché + `--list-library` con `(missing)` + `list`).
+  La galería la atenúa con badge "no disponible", bloquea el click/Enter
+  y conserva título y favorito; `apply-id` sobre un id ausente no mata
+  la sesión: reaplica el último bueno (`current-id`).
 * Tipo `image` (`img-<stem>`): las estáticas de `backgrounds-lab` salen
   en Local con chip `image`, thumb directo y sin estrella/props;
   `apply-id img-*` para el engine y pone `feh --bg-fill` (restore y

@@ -171,6 +171,7 @@ std::optional<LibraryItem> Library::parseProject (const std::filesystem::path& d
     item.title = item.id;
     item.path = dir.string ();
     item.mtime = fileMtime (projectPath);
+    item.missing = false;
 
     std::ifstream file (projectPath);
 
@@ -237,10 +238,13 @@ std::optional<LibraryItem> Library::parseProject (const std::filesystem::path& d
 }
 
 std::size_t Library::scan () {
+    // snapshot before clearing: ids known from the loaded cache but gone
+    // from disk are kept as missing instead of silently dropped
+    const std::vector<LibraryItem> previous = this->m_items;
+
     std::map<std::string, LibraryItem> merged;
 
-    for (const auto& root : Steam::FileSystem::workshopRoots (WorkshopAppID)) {
-	std::error_code ec;
+    for (const auto& root : Steam::FileSystem::workshopRoots (WorkshopAppID)) {	std::error_code ec;
 
 	for (const auto& entry : std::filesystem::directory_iterator (root, ec)) {
 	    if (ec) {
@@ -271,7 +275,22 @@ std::size_t Library::scan () {
 
     for (auto& [id, item] : merged) {
 	item.favorite = favorites.count (id) > 0;
+	item.missing = false;
 	this->m_items.push_back (std::move (item));
+    }
+
+    // Steam unsubscribes / manual deletes: keep the stale entry, badge it.
+    // Title, tags and favorite survive; path is stale but harmless.
+    for (const auto& old : previous) {
+	if (old.id.empty () || merged.count (old.id) > 0) {
+	    continue;
+	}
+
+	LibraryItem ghost = old;
+	ghost.missing = true;
+	ghost.valid = false;
+	ghost.favorite = favorites.count (ghost.id) > 0;
+	this->m_items.push_back (std::move (ghost));
     }
 
     std::sort (this->m_items.begin (), this->m_items.end (), [] (const LibraryItem& a, const LibraryItem& b) {
@@ -306,6 +325,7 @@ bool Library::save () const {
 		{ "description", item.description },
 		{ "tags", item.tags },
 		{ "valid", item.valid },
+		{ "missing", item.missing },
 		{ "favorite", item.favorite },
 		{ "mtime", item.mtime },
 	    }
@@ -368,6 +388,7 @@ bool Library::load () {
 	item.path = entry.value ("path", "");
 	item.description = entry.value ("description", "");
 	item.valid = entry.value ("valid", false);
+	item.missing = entry.value ("missing", false);
 	item.favorite = entry.value ("favorite", false);
 	item.mtime = entry.value ("mtime", std::int64_t (0));
 
@@ -443,6 +464,7 @@ std::string Library::toJson (const std::vector<LibraryItem>& items) {
 		{ "description", item.description },
 		{ "tags", item.tags },
 		{ "valid", item.valid },
+		{ "missing", item.missing },
 		{ "favorite", item.favorite },
 	    }
 	);

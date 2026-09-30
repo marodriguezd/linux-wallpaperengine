@@ -339,6 +339,7 @@ FloatingWindow {
                             asynchronous: true
                             cache: true
                             smooth: true
+                            opacity: modelData.missing ? 0.4 : 1.0
                         }
 
                         UiText {
@@ -351,6 +352,10 @@ FloatingWindow {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
+                                if (modelData.missing) {
+                                    root.galleryModel.status = (modelData.title || modelData.id) + " ya no está instalado";
+                                    return;
+                                }
                                 if (root.galleryModel.mode === "explore") {
                                     root.galleryModel.selectExplore(modelData);
                                 } else {
@@ -365,6 +370,16 @@ FloatingWindow {
                             anchors.margins: 6
                             visible: root.galleryModel.mode === "local" && root.galleryModel.currentId === modelData.id
                             text: "ACTIVA"
+                            color: Theme.accent
+                            font.bold: true
+                        }
+
+                        UiText {
+                            anchors.bottom: parent.bottom
+                            anchors.left: parent.left
+                            anchors.margins: 6
+                            visible: root.galleryModel.mode === "local" && modelData.missing === true
+                            text: "no disponible"
                             color: Theme.accent
                             font.bold: true
                         }
@@ -394,7 +409,7 @@ FloatingWindow {
                     UiText {
                         width: 190
                         elide: Text.ElideRight
-                        text: (modelData.title || modelData.id) + ((modelData.valid === false) ? " (invalid)" : "")
+                        text: (modelData.title || modelData.id) + (modelData.missing ? " (no disponible)" : ((modelData.valid === false) ? " (invalid)" : ""))
                     }
 
                     UiText {

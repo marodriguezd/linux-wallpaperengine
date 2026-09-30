@@ -329,6 +329,11 @@ Scope {
             return;
         }
 
+        if (item.missing === true) {
+            root.status = (item.title || item.id) + " ya no está instalado";
+            return;
+        }
+
         root.select(item);
         applyProcess.command = ["we-wallpaper", "apply-id", item.id];
         applyProcess.running = true;

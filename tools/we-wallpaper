@@ -154,7 +154,12 @@ list_wallpapers() {
 	python3 -c "
 import json
 for it in json.load(open('$CACHE_FILE'))['items']:
-    flag = '' if it.get('valid', True) else ' (invalid)'
+    if it.get('missing'):
+        flag = ' (missing)'
+    elif not it.get('valid', True):
+        flag = ' (invalid)'
+    else:
+        flag = ''
     print('%-12s [%-5s] %s%s' % (it.get('id', '?'), it.get('type', 'unknown'), it.get('title') or it.get('id', '?'), flag))
 "
 	return 0
@@ -1163,6 +1168,7 @@ for it in cache.get('items', []):
         'title': titles.get(tid) or it.get('title') or tid,
         'type': it.get('type', 'unknown'),
         'valid': bool(it.get('valid', True)),
+        'missing': bool(it.get('missing', False)),
         'favorite': bool(it.get('favorite', False)),
         'description': it.get('description', ''),
         'tags': it.get('tags', []),
@@ -1209,11 +1215,25 @@ apply_image() {
 }
 
 # Fase GUI-1: alias fino para clicks (modo via $2 o WE_MODE).
+# Si el id ya no está en disco (Steam unsubscribe, borrado manual),
+# no se mata la sesión: se vuelve al último bueno (current-id).
 apply_id() {
     [ -n "${1:-}" ] || { echo "Uso: we-wallpaper apply-id <id> [modo]"; return 1; }
     case "$1" in
 	img-*) apply_image "$1" "$(get_primary_screen)" ;;
-	*) apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)" ;;
+	*)
+	    if [ ! -d "$WE_DIR/$1" ]; then
+		local fallback
+		fallback=$(current_id 2>/dev/null)
+		if [ -n "$fallback" ] && [ "$fallback" != "$1" ] && [ -d "$WE_DIR/$fallback" ]; then
+		    echo "'$1' ya no está instalado; volviendo a '$fallback'"
+		    apply_wallpaper "$fallback" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)"
+		    return $?
+		fi
+		echo "'$1' ya no está instalado (¿Steam unsubscribe?); usa 'we-wallpaper refresh'"
+		return 1
+	    fi
+	    apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)" ;;
     esac
 }
 

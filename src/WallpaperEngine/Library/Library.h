@@ -28,6 +28,13 @@ struct LibraryItem {
     std::vector<std::string> tags;
     /** False when project.json is missing required type/file info */
     bool valid = false;
+    /**
+     * True when the item was known from a previous scan but its directory
+     * is gone now (Steam unsubscribe, manual delete). The entry is kept
+     * (title, favorite, ...) so the gallery can badge it instead of
+     * silently dropping it. Always implies valid == false.
+     */
+    bool missing = false;
     /** User favorite (sidecar file, survives rescans) */
     bool favorite = false;
     /** project.json mtime, used for cache invalidation */
