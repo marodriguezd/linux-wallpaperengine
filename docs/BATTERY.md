@@ -42,6 +42,11 @@ igual. Por eso 60→10 fps no es 6x menos CPU.
 WE_PROFILE=lite WE_FPS_BATTERY=10 WE_HWDEC=vaapi-copy we-wallpaper apply <id> lite eDP-1
 ```
 
+O persistido (equivale, sin exports): `we-wallpaper power-set
+WE_PROFILE=lite WE_FPS_BATTERY=10 WE_HWDEC=vaapi-copy` → queda en
+`~/.config/we-wallpaper/power.conf` y aplica en cada apply/restore.
+La galería lo expone en el panel Power (Local).
+
 Y para duración máxima: `WE_PAUSE_ON_BATTERY=1` (o `--pause-on-battery`).
 En X11 además: `--idle-pause N` pausa tras N minutos sin input
 (MIT-SCREEN-SAVER vía dlopen, sin deps nuevas de build; verificado

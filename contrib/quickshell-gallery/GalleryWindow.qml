@@ -519,6 +519,12 @@ FloatingWindow {
                                 clip: true
                                 text: root.galleryModel.powerIgnoreAppid
                                 onTextChanged: root.galleryModel.powerIgnoreAppid = text
+                                Keys.onPressed: function(event) {
+                                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                        root.galleryModel.applyPower();
+                                        event.accepted = true;
+                                    }
+                                }
                             }
 
                             UiText {
