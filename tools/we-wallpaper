@@ -26,6 +26,10 @@ fi
 CURSOR_ENV=()
 [ -n "${WE_CURSOR_THEME:-}" ] && CURSOR_ENV+=("XCURSOR_THEME=$WE_CURSOR_THEME")
 [ -n "${WE_CURSOR_SIZE:-}" ] && CURSOR_ENV+=("XCURSOR_SIZE=$WE_CURSOR_SIZE")
+# Quirk Intel (igual que dwm-wallpaper-animated): forzar iGPU 00:02.0 y no
+# despertar la dGPU (D3cold). Sin esto mpv elige nvdec y la RTX 3050 queda
+# en 'active' ~8W solo por el fondo.
+INTEL_ENV=(CUDA_VISIBLE_DEVICES="" NVIDIA_VISIBLE_DEVICES=void __GLX_VENDOR_LIBRARY_NAME=mesa DRI_PRIME=pci-0000_00_02_0 "VK_LOADER_DRIVERS_SELECT=*intel*" LIBVA_DRIVER_NAME=iHD)
 STATE_DIR="$HOME/.config/we-wallpaper"
 STATE_FILE="$STATE_DIR/state.conf"
 # Fase Power: perfil de energía persistido. El fichero solo rellena las
@@ -294,7 +298,7 @@ apply_wallpaper() {
     # Lanzamiento desacoplado (setsid+disown, como dwm-wallpaper-animated):
     # sobrevive al cierre del terminal y a limpiezas de grupo de procesos.
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
 	--screen-root "$screen" \
 	--bg "$wallpaper_id" \
 	"${fork_args[@]}" \
@@ -360,7 +364,7 @@ apply_all() {
     fi
 
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
 	"${screen_args[@]}" \
 	"${fork_args[@]}" \
 	"${flags[@]}" \
@@ -412,7 +416,7 @@ playlist_play() {
 	done < <(get_all_screens)
 	[ ${#screen_args[@]} -eq 0 ] && { echo "Error: no se detectó ningún monitor"; return 1; }
 	# shellcheck disable=SC2086
-	env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
+	env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
 	    "${screen_args[@]}" \
 	    "${fork_args[@]}" \
 	    "${flags[@]}" \
@@ -422,7 +426,7 @@ playlist_play() {
 	PLAYLIST_FILE="$file" save_state "playlist" "playlist" "$first_screen" "playlist-all"
     else
 	# shellcheck disable=SC2086
-	env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
+	env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
 	    --screen-root "$target" --playlist-file "$file" \
 	    "${fork_args[@]}" \
 	    "${flags[@]}" \
