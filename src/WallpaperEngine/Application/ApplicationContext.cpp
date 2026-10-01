@@ -631,8 +631,8 @@ void ApplicationContext::loadSettingsFromArgv () {
     auto& performanceGroup = program.add_group ("Performance options");
 
     performanceGroup.add_argument ("-f", "--fps")
-	.help ("Limits the FPS to the given number, useful to keep battery consumption low")
-	.default_value (30)
+	.help ("Limits the FPS to the given number, useful to keep battery consumption low (native default 24 AC)")
+	.default_value (24)
 	.store_into (this->settings.render.maximumFPS);
 
     performanceGroup.add_argument ("--no-fullscreen-pause")
@@ -657,8 +657,8 @@ void ApplicationContext::loadSettingsFromArgv () {
 	.append ();
 
     performanceGroup.add_argument ("--fps-battery")
-	.help ("FPS cap while running on battery (UPower with sysfs fallback). 0 pauses on battery, -1 disables it")
-	.default_value (-1)
+	.help ("FPS cap while running on battery (UPower with sysfs fallback). 0 pauses on battery, -1 disables it (native default 15)")
+	.default_value (15)
 	.store_into (this->settings.render.batteryMaximumFPS);
 
     performanceGroup.add_argument ("--pause-on-battery")

@@ -32,9 +32,17 @@ STATE_FILE="$STATE_DIR/state.conf"
 # variables NO exportadas en el entorno (export gana siempre).
 POWER_CONF="$STATE_DIR/power.conf"
 power_defaults() {
-    echo "WE_PROFILE=${WE_PROFILE:-}"
-    echo "WE_FPS=${WE_FPS:-}"
-    echo "WE_FPS_BATTERY=${WE_FPS_BATTERY:-10}"
+    # Nativo 24 AC / 15 batería cuando no hay power.conf (fresco).
+    # Si el fichero existe, se respeta su valor aunque sea vacío (auto).
+    if [ -f "$POWER_CONF" ]; then
+        echo "WE_PROFILE=${WE_PROFILE:-}"
+        echo "WE_FPS=${WE_FPS:-}"
+        echo "WE_FPS_BATTERY=${WE_FPS_BATTERY:-15}"
+    else
+        echo "WE_PROFILE=${WE_PROFILE:-}"
+        echo "WE_FPS=${WE_FPS:-24}"
+        echo "WE_FPS_BATTERY=${WE_FPS_BATTERY:-15}"
+    fi
     echo "WE_PAUSE_ON_BATTERY=${WE_PAUSE_ON_BATTERY:-0}"
     echo "WE_IDLE_PAUSE=${WE_IDLE_PAUSE:-0}"
     echo "WE_BACKEND=${WE_BACKEND:-}"
@@ -771,8 +779,8 @@ power_set() {
     [ -n "${1:-}" ] || { echo "Uso: we-wallpaper power-set CLAVE=VALOR ..."; return 1; }
     mkdir -p "$STATE_DIR" || return 1
     local kv k v ok=1
-    # carga lo actual para reescribir completo
-    local cur_profile="$WE_PROFILE" cur_fps="$WE_FPS" cur_batt="${WE_FPS_BATTERY:-10}"
+    # carga lo actual para reescribir completo (nativo 24 AC / 15 batería)
+    local cur_profile="$WE_PROFILE" cur_fps="${WE_FPS:-24}" cur_batt="${WE_FPS_BATTERY:-15}"
     local cur_pause="${WE_PAUSE_ON_BATTERY:-0}" cur_idle="${WE_IDLE_PAUSE:-0}"
     local cur_backend="$WE_BACKEND" cur_layer="${WE_LAYER:-bottom}"
     local cur_active="${WE_PAUSE_ACTIVE_ONLY:-0}" cur_ignore="$WE_PAUSE_IGNORE_APPID"

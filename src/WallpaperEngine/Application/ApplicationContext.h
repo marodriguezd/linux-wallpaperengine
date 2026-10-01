@@ -240,9 +240,9 @@ public:
         },
         .render = {
 	    .mode = NORMAL_WINDOW,
-	    .maximumFPS = 30,
+	    .maximumFPS = 24,
 	    .pauseOnFullscreen = true,
-	    .batteryMaximumFPS = -1,
+	    .batteryMaximumFPS = 15,
 	    .idlePauseMinutes = 0,
             .pauseOnFullscreenOnlyWhenActive = false,
             .fullscreenPauseIgnoreAppIds = {},
