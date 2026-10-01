@@ -147,8 +147,18 @@ else:
     else
 	local rate
 	rate=$(xrandr 2>/dev/null | awk '{for (i = 1; i <= NF; i++) if ($i ~ /\*/) {gsub (/[^0-9.]/, "", $i); split ($i, a, "."); print a[1]; exit}}')
-	echo "${rate:-60}"
+    echo "${rate:-60}"
     fi
+}
+
+# FPS efectivo en AC: WE_FPS explícito > preset del profile > refresco.
+# (argparse aplica en orden, igual que apply_wallpaper/playlist_play)
+effective_fps() {
+    if [ -n "${WE_FPS:-}" ]; then echo "$WE_FPS"; return 0; fi
+    case "${WE_PROFILE:-}" in
+	lite) echo 15 ;; balanced) echo 30 ;; full) echo 60 ;;
+	*) get_refresh_rate ;;
+    esac
 }
 
 get_primary_screen() {
@@ -281,15 +291,18 @@ apply_wallpaper() {
     # overrides por wallpaper (props/<id>.conf), solo modo fondo fijo
     load_saved_props "$wallpaper_id" flags
 
+    # Lanzamiento desacoplado (setsid+disown, como dwm-wallpaper-animated):
+    # sobrevive al cierre del terminal y a limpiezas de grupo de procesos.
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
 	--screen-root "$screen" \
 	--bg "$wallpaper_id" \
 	"${fork_args[@]}" \
 	"${flags[@]}" \
 	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+    disown $! 2>/dev/null || true
 
-    echo "Wallpaper $wallpaper_id en $screen @ ${fps}Hz (modo: $mode, backend: $(detect_backend))"
+    echo "Wallpaper $wallpaper_id en $screen @ $(effective_fps)fps AC / ${WE_FPS_BATTERY:-15}fps batt (modo: $mode, backend: $(detect_backend))"
     save_state "$wallpaper_id" "$mode" "$screen" "single"
     apply_theme "$(theme_image_for "$wallpaper_id")"
 }
@@ -347,13 +360,14 @@ apply_all() {
     fi
 
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
 	"${screen_args[@]}" \
 	"${fork_args[@]}" \
 	"${flags[@]}" \
 	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+    disown $! 2>/dev/null || true
 
-    echo "Wallpaper $wallpaper_id en todos los monitores @ ${fps}Hz (modo: $mode)"
+    echo "Wallpaper $wallpaper_id en todos los monitores @ $(effective_fps)fps AC / ${WE_FPS_BATTERY:-15}fps batt (modo: $mode)"
     save_state "$wallpaper_id" "$mode" "$first_screen" "all"
     apply_theme "$(theme_image_for "$wallpaper_id")"
 }
@@ -398,20 +412,22 @@ playlist_play() {
 	done < <(get_all_screens)
 	[ ${#screen_args[@]} -eq 0 ] && { echo "Error: no se detectó ningún monitor"; return 1; }
 	# shellcheck disable=SC2086
-	env "${CURSOR_ENV[@]}" nohup $ENGINE \
+	env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
 	    "${screen_args[@]}" \
 	    "${fork_args[@]}" \
 	    "${flags[@]}" \
 	    --assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	disown $! 2>/dev/null || true
 	echo "Playlist $file en todos los monitores (modo: timer)"
 	PLAYLIST_FILE="$file" save_state "playlist" "playlist" "$first_screen" "playlist-all"
     else
 	# shellcheck disable=SC2086
-	env "${CURSOR_ENV[@]}" nohup $ENGINE \
+	env "${CURSOR_ENV[@]}" setsid nohup $ENGINE \
 	    --screen-root "$target" --playlist-file "$file" \
 	    "${fork_args[@]}" \
 	    "${flags[@]}" \
 	    --assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	disown $! 2>/dev/null || true
 	echo "Playlist $file en $target (modo: timer)"
 	PLAYLIST_FILE="$file" save_state "playlist" "playlist" "$target" "playlist"
     fi
