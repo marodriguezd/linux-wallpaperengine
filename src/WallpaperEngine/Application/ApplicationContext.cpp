@@ -920,17 +920,20 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    = std::max<uint32_t> (0, std::min<uint32_t> (this->settings.screenshot.delay, 600));
 
 	// use std::cout on this in case logging is disabled, this way it's easy to look at what is running
-	std::stringbuf buffer;
-	std::ostream bufferStream (&buffer);
+	// (suppressed when --json is requested so stdout remains strictly valid JSON)
+	if (!this->settings.library.asJson) {
+	    std::stringbuf buffer;
+	    std::ostream bufferStream (&buffer);
 
-	bufferStream << "Running with: ";
+	    bufferStream << "Running with: ";
 
-	for (int i = 0; i < this->m_argc; i++) {
-	    bufferStream << this->m_argv[i];
-	    bufferStream << " ";
+	    for (int i = 0; i < this->m_argc; i++) {
+		bufferStream << this->m_argv[i];
+		bufferStream << " ";
+	    }
+
+	    std::cout << buffer.str () << std::endl;
 	}
-
-	std::cout << buffer.str () << std::endl;
 	// perform some extra validation on the inputs
 	this->validateAssets ();
 	this->validateScreenshot ();
