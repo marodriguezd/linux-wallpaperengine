@@ -20,48 +20,51 @@ Bring **Wallpaper Engine**-style live wallpapers to Linux! This project allows y
 
 ---
 
-## 🐧 Fork: X11 + DWM + wallpaper catalog and gallery (branch `feat/battery-x11`)
+## 🐧 Fork: X11 + DWM + wallpaper catalog and gallery (v1.0.0 release)
 
-> Everything in this section is **our own addition** on top of
-> [Almamu](https://github.com/Almamu/linux-wallpaperengine)'s upstream, which we
-> keep merging into. The original README is untouched: this section is
-> self-declared and only lives on the fork branch.
+> Everything in this section describes **our fork's features and enhancements** on top of
+> [Almamu](https://github.com/Almamu/linux-wallpaperengine)'s upstream. We maintain our work on
+> the `main` branch, keeping it fully compatible with upstream while adding battery optimization,
+> catalog caching, D-Bus MPRIS controls, and a complete Quickshell gallery interface.
 
 ![Local gallery: filters with live counts, per-card metadata, ACTIVE badge and the properties panel](docs/images/gallery-local.png)
 
 ![Explore gallery: MotionBGS with remote thumbnails, per-source chips, install and load more](docs/images/gallery-explore.png)
 
-**What the fork adds, in short:**
+**What this fork adds:**
 
-* **Battery and performance** — `--fps-battery`, `--pause-on-battery`,
-  `--profile {lite,balanced,full}`, throttling through `effectiveMaximumFPS()`
-  with a battery-aware cap, correct EWMH fullscreen handling, and detection
-  via UPower + sysfs. See [`docs/BATTERY.md`](docs/BATTERY.md).
-* **Local catalog** — a C++ `Library` that scans the Workshop roots, caches
-  to `~/.cache/linux-wallpaperengine/library.json`, and exposes
-  `--list-library/--search/--type/--json/--refresh` plus `make-previews`.
+* **Battery & Power Efficiency** — Native default targets: **24 FPS on AC / 15 FPS on battery**.
+  Configurable via `--fps <n>`, `--fps-battery <n>`, `--pause-on-battery`, and presets with `--profile {lite,balanced,full}`.
+  Automatic power-source detection using system UPower with `/sys/class/power_supply` fallback.
+  X11 user inactivity detection via `--idle-pause <minutes>` (MIT-SCREEN-SAVER extension).
+  See [`docs/BATTERY.md`](docs/BATTERY.md).
+* **Persistent Power Profiles** — `we-wallpaper power` and `we-wallpaper power-set KEY=VALUE`
+  save settings to `~/.config/we-wallpaper/power.conf`, supporting environment overrides and hot reload.
+* **Local Workshop Catalog & Cache** — Fast C++ `Library` scanner that indexes Workshop assets,
+  maintains `~/.cache/linux-wallpaperengine/library.json`, and handles missing/unsubscribed items
+  gracefully (`missing=true` badged in UI rather than silently dropping).
+  CLI: `--list-library`, `--search <query>`, `--type {scene,video,web}`, `--json`, `--refresh`, `--fav <id>`.
   See [`docs/CATALOG.md`](docs/CATALOG.md).
-* **`we-wallpaper` helper** — apply/restore, signal-driven playlists,
-  cascading wallpaper picker (rofi → dmenu → fzf → terminal), favorites,
-  tags, importing, and per-wallpaper property overrides.
-  See [`docs/PLAYLIST.md`](docs/PLAYLIST.md) and
-  [`docs/SWITCH-THEME.md`](docs/SWITCH-THEME.md).
-* **MPRIS + idle-pause + `fetch`** — a D-Bus player for external controls,
-  pause on inactivity, and downloading standalone videos/images.
+* **MPRIS Integration** — Minimal D-Bus media player server (`org.mpris.MediaPlayer2.linux-wallpaperengine`)
+  exposing playback status and current wallpaper metadata, allowing media keys/scripts to control wallpapers.
   See [`docs/MPRIS.md`](docs/MPRIS.md).
-* **Quickshell gallery** — `contrib/quickshell-gallery/`: local library with
-  filters and counts, favorites, per-wallpaper properties, and an **Explore**
-  tab covering bing / wallhaven / motionbgs / minimal with install, remove and
-  load more. See [`docs/GUI.md`](docs/GUI.md).
-* **Online store** — reuses the behavior described in
-  [antwny/aura](https://github.com/antwny/aura) (GPL-3.0, same as this
-  project), reimplemented from scratch in the helper.
-  See [`docs/CATALOG.md`](docs/CATALOG.md).
+* **Enhanced Shader Compatibility** — Automatic retry & swizzle heuristics in GLSL compilation for
+  HLSL vector type mismatches, fixing complex scene wallpapers like Sushi Cosmo.
+* **Robust Hardware Video Decoding** — Custom `--hwdec <backend>` option passed at mpv initialization
+  (e.g. `vaapi`, `vaapi-copy`, `nvdec`, `cuda`), preventing NVIDIA driver race conditions and segfaults on playlist switches.
+* **`we-wallpaper` Helper Tool** — Full CLI management: `apply`, `restore`, `stop`, `list`, `grid`,
+  `tags`, `props`, `fav`, `catalog`, `catalog-get`, `fetch`, `import`, `power`, `power-set`, `backend`, `version`.
+  See [`docs/PLAYLIST.md`](docs/PLAYLIST.md) and [`docs/SWITCH-THEME.md`](docs/SWITCH-THEME.md).
+* **Quickshell Gallery (`SUPER+SHIFT+G`)** — Located in `contrib/quickshell-gallery/`:
+  features dynamic category/mood counts, live properties editor, favorites, and an **Explore** store
+  tab supporting Bing Daily (UHD + archive), Wallhaven, MotionBGS (HD/4K video scraping), and Minimalist backgrounds.
+  See [`docs/GUI.md`](docs/GUI.md).
+* **Desktop Integration** — Clean symbolic and scalable application icons (`assets/icons/we-wallpaper.svg`
+  and `we-wallpaper-symbolic.svg`).
 
-**How it is used here:** the engine from this fork is compiled and the helper
-is installed to `~/.local/bin/we-wallpaper`; the gallery is a separate
-Quickshell module, so none of this ties the engine to a specific compositor
-(DWM/X11 behaves the same as on any other X11 setup).
+**Deployment summary:**
+The engine binary is built to `build/output/linux-wallpaperengine` and deployed to `/opt/fork/linux-wallpaperengine`.
+The helper is installed to `~/.local/bin/we-wallpaper` and is compositor-independent (tested on DWM X11 and Sway Wayland).
 
 ---
 
@@ -218,21 +221,34 @@ If you're one of those developers, feel free to open an issue to get your projec
 
 | Option | Description |
 |--------|-------------|
-| `--silent` | Mute background audio |
-| `--volume <val>` | Set audio volume |
+| `--version` | Print fork version information and exit |
+| `--silent`, `-s` | Mute background audio |
+| `--volume <val>`, `-v` | Set audio volume (0-128) |
 | `--noautomute` | Don't mute when other apps play audio |
 | `--no-audio-processing` | Disable audio reactive features |
-| `--fps <val>` | Limit frame rate |
-| `--window <XxYxWxH>` | Run in windowed mode with custom size/position |
-| `--screen-root <screen>` | Set as background for specific screen |
-| `--screen-span <screen-1>,<screen-2>,...` | Stretch a single wallpaper across multiple screens |
-| `--bg <id/path>` | Assign a background to a specific screen (use after `--screen-root`/`--screen-span`) |
+| `--fps <val>`, `-f` | Limit frame rate (native default: 24 AC) |
+| `--fps-battery <val>` | Limit frame rate while running on battery (native default: 15, 0 = pause) |
+| `--pause-on-battery` | Fully pause wallpaper rendering when system runs on battery |
+| `--idle-pause <minutes>` | X11 only: pause wallpaper when idle for N minutes (MIT-SCREEN-SAVER) |
+| `--hwdec <backend>` | mpv video hardware decoding backend (`auto`, `vaapi`, `nvdec`, `cuda`, etc.) |
+| `--profile <preset>` | Apply instant profile: `lite` (15fps, no fx), `balanced` (30fps), `full` (60fps) |
+| `--window <XxYxWxH>`, `-w` | Run in windowed mode with custom size/position |
+| `--screen-root <screen>`, `-r` | Set as background for specific screen |
+| `--screen-span <s1,s2,...>` | Stretch a single wallpaper across multiple screens |
+| `--bg <id/path>`, `-b` | Assign a background to a specific screen (use after `--screen-root`/`--screen-span`) |
+| `--playlist-file <file>` | Load sequential or random playlist from text file |
 | `--scaling <mode>` | Wallpaper scaling: `stretch`, `fit`, `fill`, or `default` |
 | `--clamping <mode>` | Set texture clamping: `clamp`, `border`, `repeat` |
 | `--assets-dir <path>` | Set custom path for assets |
 | `--screenshot <file>` | Save screenshot (PNG, JPEG, BMP) |
-| `--list-properties` | Show customizable properties of a wallpaper |
+| `--list-properties`, `-l` | Show customizable properties of a wallpaper |
 | `--set-property name=value` | Override a specific property |
+| `--list-library` | Scan and list installed workshop wallpapers without starting renderer |
+| `--search <query>` | Search installed wallpapers by id, title, description, or tags |
+| `--type <scene\|video\|web>` | Filter `--list-library` or `--search` by wallpaper type |
+| `--json` | Output library items in JSON format |
+| `--refresh` | Force a rescan of workshop directories |
+| `--fav <id>` | Toggle favorite state for a background id |
 | `--disable-mouse` | Disable mouse interaction |
 | `--disable-parallax` | Disable parallax effect on backgrounds that support it |
 | `--no-fullscreen-pause` | Prevent pausing while fullscreen apps are running |

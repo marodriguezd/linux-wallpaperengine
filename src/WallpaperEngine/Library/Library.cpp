@@ -244,27 +244,32 @@ std::size_t Library::scan () {
 
     std::map<std::string, LibraryItem> merged;
 
-    for (const auto& root : Steam::FileSystem::workshopRoots (WorkshopAppID)) {	std::error_code ec;
+    for (const auto& root : Steam::FileSystem::workshopRoots (WorkshopAppID)) {
+	try {
+	    std::error_code ec;
 
-	for (const auto& entry : std::filesystem::directory_iterator (root, ec)) {
-	    if (ec) {
-		break;
+	    for (const auto& entry : std::filesystem::directory_iterator (root, ec)) {
+		if (ec) {
+		    break;
+		}
+
+		std::error_code dirEc;
+
+		if (!entry.is_directory (dirEc)) {
+		    continue;
+		}
+
+		auto item = parseProject (entry.path ());
+
+		if (!item.has_value ()) {
+		    continue;
+		}
+
+		// first root wins, same precedence as workshopDirectory()
+		merged.try_emplace (item->id, std::move (*item));
 	    }
-
-	    std::error_code dirEc;
-
-	    if (!entry.is_directory (dirEc)) {
-		continue;
-	    }
-
-	    auto item = parseProject (entry.path ());
-
-	    if (!item.has_value ()) {
-		continue;
-	    }
-
-	    // first root wins, same precedence as workshopDirectory()
-	    merged.try_emplace (item->id, std::move (*item));
+	} catch (const std::exception& e) {
+	    sLog.error ("Library: error scanning ", root.string (), ": ", e.what ());
 	}
     }
 

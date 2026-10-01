@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
-project(linux-wallpaperengine)
+project(linux-wallpaperengine VERSION 1.0.0 LANGUAGES C CXX)
+
+set(LINUX_WALLPAPERENGINE_VERSION "${PROJECT_VERSION}")
+add_compile_definitions(LINUX_WALLPAPERENGINE_VERSION="${LINUX_WALLPAPERENGINE_VERSION}")
 
 # prevent installing to /usr by default so we don't bork anything
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)

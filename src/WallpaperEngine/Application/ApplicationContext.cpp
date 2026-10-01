@@ -357,10 +357,25 @@ ApplicationContext::PlaylistDefinition ApplicationContext::playlistFromFile (con
 
 ApplicationContext::ApplicationContext (int argc, char* argv[]) : m_argc (argc), m_argv (argv) { }
 
+#ifndef LINUX_WALLPAPERENGINE_VERSION
+#define LINUX_WALLPAPERENGINE_VERSION "1.0.0"
+#endif
+
 void ApplicationContext::loadSettingsFromArgv () {
     std::string lastScreen;
 
-    argparse::ArgumentParser program ("linux-wallpaperengine", "0.0", argparse::default_arguments::help);
+    argparse::ArgumentParser program (
+	"linux-wallpaperengine", LINUX_WALLPAPERENGINE_VERSION, argparse::default_arguments::help
+    );
+
+    program.add_argument ("--version")
+	.help ("Prints version information and exits")
+	.flag ()
+	.action ([] (const std::string& /*unused*/) -> void {
+	    std::cout << "linux-wallpaperengine " << LINUX_WALLPAPERENGINE_VERSION
+		      << " (fork: X11/DWM, battery, catalog, store, quickshell-gallery)" << std::endl;
+	    std::exit (0);
+	});
 
     auto& backgroundGroup = program.add_group ("Background options");
     auto& backgroundMode = backgroundGroup.add_mutually_exclusive_group (false);

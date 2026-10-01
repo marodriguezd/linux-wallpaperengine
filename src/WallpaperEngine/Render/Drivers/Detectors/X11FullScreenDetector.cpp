@@ -110,6 +110,10 @@ bool X11FullScreenDetector::anythingFullscreen () const {
 		break;
 	    }
 	}
+
+	if (isFullscreen) {
+	    break;
+	}
     }
 
     XFree (children);

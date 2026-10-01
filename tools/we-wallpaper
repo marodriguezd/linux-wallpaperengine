@@ -1663,6 +1663,7 @@ usage() {
     echo "  power                                 Ver perfil de energía (K=V)"
     echo "  power-set CLAVE=VALOR ...             Guardar perfil de energía"
     echo "  backend                               Detectar backend (sway|x11|unknown)"
+    echo "  version                               Mostrar versión del fork y engine"
     echo ""
     echo "Modos: normal (default), lite, no-particles"
     echo "Env X11: WE_DIR WE_ASSETS_DIR WE_ENGINE WE_BACKEND WE_MODE"
@@ -1676,6 +1677,14 @@ usage() {
 }
 
 case "${1:-}" in
+    version|--version|-v)
+	echo "we-wallpaper 1.0.0 (linux-wallpaperengine fork)"
+	if [ -x "$ENGINE" ]; then
+	    "$ENGINE" --version 2>/dev/null || echo "engine: $ENGINE"
+	else
+	    echo "engine: $ENGINE (not executable)"
+	fi
+	;;
     list)       list_wallpapers ;;
     fav)
 	[ -n "${2:-}" ] || { echo "Uso: we-wallpaper fav <id>"; exit 1; }
