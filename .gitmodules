@@ -1,7 +1,7 @@
 [submodule "src/External/glslang-WallpaperEngine"]
 	path = src/External/glslang-WallpaperEngine
-	url = https://github.com/Almamu/glslang-WallpaperEngine.git
-	branch = main
+	url = https://github.com/marodriguezd/glslang-WallpaperEngine.git
+	branch = fix/bool-int-promotion-glsl
 [submodule "src/External/SPIRV-Cross-WallpaperEngine"]
 	path = src/External/SPIRV-Cross-WallpaperEngine
 	url = https://github.com/Almamu/SPIRV-Cross-WallpaperEngine.git
