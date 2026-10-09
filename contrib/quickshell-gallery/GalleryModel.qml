@@ -193,7 +193,7 @@ Scope {
         root.exploreLoading = true;
         root.status = "buscando online...";
         const args = ["we-wallpaper", "catalog", root.exploreSource, root.exploreQuery];
-        if (root.exploreSource === "motionbgs" || root.exploreSource === "wallhaven" || root.exploreSource === "minimal") {
+        if (root.exploreSource === "motionbgs" || root.exploreSource === "wallhaven" || root.exploreSource === "desktophut" || root.exploreSource === "minimal") {
             args.push(String(root.explorePage));
         }
         exploreProcess.command = args;
@@ -262,6 +262,9 @@ Scope {
             }
             const lid = String(it.id);
             if (src === "motionbgs" && lid.toLowerCase().indexOf("motionbgs-" + key + "-") === 0) {
+                return lid;
+            }
+            if (src === "desktophut" && lid.toLowerCase() === "desktophut-" + key) {
                 return lid;
             }
             if ((src === "wallhaven" || src === "minimal" || src === "bing") && (it.type || "") === "image") {
@@ -457,7 +460,7 @@ Scope {
         if (!id) {
             return false;
         }
-        return id.indexOf("motionbgs-") === 0 || id.indexOf("bing-") === 0 || id.indexOf("img-") === 0;
+        return id.indexOf("motionbgs-") === 0 || id.indexOf("desktophut-") === 0 || id.indexOf("bing-") === 0 || id.indexOf("img-") === 0;
     }
 
     function remove(item : var) : void {

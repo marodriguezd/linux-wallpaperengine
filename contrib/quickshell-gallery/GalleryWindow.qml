@@ -146,6 +146,7 @@ FloatingWindow {
                         { id: "bing", label: "bing" },
                         { id: "wallhaven", label: "wallhaven" },
                         { id: "motionbgs", label: "motion" },
+                        { id: "desktophut", label: "desktophut" },
                         { id: "minimal", label: "minimal" }
                     ]
 

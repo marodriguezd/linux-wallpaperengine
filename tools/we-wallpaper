@@ -966,6 +966,8 @@ for img in data.get('images', []):
 	    if [[ "$q" == *sort:* ]]; then
 		sort=$(echo "$q" | grep -oE 'sort:[a-z]+' | head -n 1 | cut -d: -f2)
 		q=$(echo "$q" | sed -E 's/sort:[a-z]+//g' | xargs)
+	    elif [ -n "$q" ]; then
+		sort="relevance"
 	    fi
 	    [ -z "$q" ] && q="nature"
 	    curl -fsSL -m 25 -G "https://wallhaven.cc/api/v1/search" \
@@ -1009,7 +1011,13 @@ try:
     raw = urllib.request.urlopen(req, timeout=25).read().decode('utf-8', 'replace')
 except Exception as e:
     sys.exit('motionbgs: red falló (%s)' % e)
+if 'No Results Found' in raw:
+    sys.exit('motionbgs: sin resultados')
 body = raw[raw.find('<body'):] if '<body' in raw else raw
+# Evitar parsear iconos de 'Trending Searches' o 'Popular Categories'
+for stop_token in ['Trending Searches:', 'Popular Categories:']:
+    if stop_token in body:
+        body = body[:body.find(stop_token)]
 seen = set()
 n = 0
 for m in re.finditer(r'/media/(\d+)/([A-Za-z0-9][^\"\\s<>]{0,160}\.jpg)', body):
@@ -1042,6 +1050,62 @@ for m in re.finditer(r'/media/(\d+)/([A-Za-z0-9][^\"\\s<>]{0,160}\.jpg)', body):
         break
 if n == 0:
     sys.exit('motionbgs: sin resultados (¿HTML cambiado?)')
+"
+	    ;;
+	desktophut)
+	    # Scraping directo de desktophut.com (live wallpapers MP4)
+	    MB_Q="$query" MB_PAGE="$page" python3 -c "
+import html as H, os, re, sys, urllib.parse, urllib.request
+q = os.environ.get('MB_Q', '').strip()
+pg = max(int(os.environ.get('MB_PAGE', '1') or 1), 1)
+if q:
+    url = 'https://www.desktophut.com/search/%s' % urllib.parse.quote(q)
+    if pg > 1:
+        url += '?page=%d' % pg
+else:
+    url = 'https://www.desktophut.com/?page=%d' % pg if pg > 1 else 'https://www.desktophut.com/'
+req = urllib.request.Request(url, headers={
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0',
+    'Accept-Language': 'en-US,en;q=0.5', 'Referer': 'https://www.desktophut.com/'})
+try:
+    raw = urllib.request.urlopen(req, timeout=25).read().decode('utf-8', 'replace')
+except Exception as e:
+    sys.exit('desktophut: red falló (%s)' % e)
+if 'No matches for' in raw:
+    sys.exit('desktophut: sin resultados')
+seen = set()
+n = 0
+for m in re.finditer(r'<a\s+[^>]*class=[\"\'][^\"\']*wallpaper-card[^\"\']*[\"\'][^>]*>(.*?)</a>', raw, re.DOTALL):
+    full_tag = m.group(0)
+    card_body = m.group(1)
+    m_href = re.search(r'href=[\"\'](/[^\"\']+)[\"\']', full_tag)
+    slug = m_href.group(1).lstrip('/') if m_href else ''
+    if not slug or slug in seen or slug.startswith('category/') or slug.startswith('tag/'):
+        continue
+    seen.add(slug)
+    m_img = re.search(r'src=[\"\']([^\"\']+\.(?:webp|jpg|jpeg|png))[\"\']', card_body)
+    thumb = m_img.group(1) if m_img else ''
+    if thumb and thumb.startswith('/'):
+        thumb = 'https://www.desktophut.com' + thumb
+    m_title = re.search(r'<h3 class=[\"\']card-title[\"\']>([^<]+)</h3>', card_body)
+    if m_title:
+        title = m_title.group(1)
+    else:
+        m_t = re.search(r'title=[\"\']([^\"\']+)[\"\']', full_tag)
+        title = m_t.group(1) if m_t else slug
+    title = H.unescape(title.strip())
+    if title.lower().endswith(' — animated wallpaper'):
+        title = title[:-21]
+    elif title.lower().endswith(' animated wallpaper'):
+        title = title[:-19]
+    res = '4K' if '4k' in full_tag.lower() else 'HD'
+    print('desktophut:%s|%s [%s]|%s|https://www.desktophut.com/%s|video' % (
+        slug, title.replace('|', '/'), res, thumb, slug))
+    n += 1
+    if n >= 24:
+        break
+if n == 0:
+    sys.exit('desktophut: sin resultados (¿HTML cambiado?)')
 "
 	    ;;
 	minimal)
@@ -1097,7 +1161,7 @@ if n == 0:
 "
 	    ;;
 	*)
-	    echo "Uso: we-wallpaper catalog <bing|wallhaven|motionbgs|minimal> [query]"
+	    echo "Uso: we-wallpaper catalog <bing|wallhaven|motionbgs|desktophut|minimal> [query]"
 	    return 1
 	    ;;
     esac
@@ -1119,7 +1183,7 @@ remove_item() {
     else
 	dir="$WE_DIR/$id"
 	[ -d "$dir" ] || { echo "No existe: $id"; return 1; }
-	if [[ "$id" != motionbgs-* && "$id" != bing-* && "$id" != fetch-* ]] \
+	if [[ "$id" != motionbgs-* && "$id" != desktophut-* && "$id" != bing-* && "$id" != fetch-* ]] \
 	    && [ "$force" != "--force" ]; then
 	    echo "'$id' no parece del store (usa --force si sabes lo que haces)"
 	    return 1
@@ -1221,12 +1285,39 @@ print(d.get('path', ''))
 	    WE_FETCH_NAME="motionbgs-$key.mp4" \
 		fetch_url "https://motionbgs.com/dl/$q/$key/" "$wid"
 	    ;;
+	desktophut)
+	    # catalog-get desktophut:<slug> [id-custom] [título]
+	    local wid="desktophut-$key"
+	    [ -n "${2:-}" ] && wid="$2"
+	    [ -d "$WE_DIR/$wid" ] && { echo "Ya existe: $wid (usa otro id)"; return 1; }
+	    local mp4_url
+	    mp4_url=$(curl -fsSL -m 25 -A "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
+		"https://www.desktophut.com/$key" 2>/dev/null \
+		| python3 -c "
+import re, sys
+raw = sys.stdin.read()
+m = re.search(r'href=[\"\'](https://www\.desktophut\.com/files/[^\"\']+\.mp4)[\"\']', raw)
+if not m:
+    m = re.search(r'href=[\"\']([^\"\']+\.mp4)[\"\']', raw)
+if m:
+    u = m.group(1)
+    if u.startswith('/'):
+        u = 'https://www.desktophut.com' + u
+    print(u)
+" 2>/dev/null)
+	    [ -n "$mp4_url" ] || { echo "desktophut: no se encontró archivo MP4 para '$key'"; return 1; }
+	    WE_FETCH_UA="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
+	    WE_FETCH_REFERER="https://www.desktophut.com/$key" \
+	    WE_FETCH_EXT="mp4" \
+	    WE_FETCH_NAME="desktophut-$key.mp4" \
+		fetch_url "$mp4_url" "$wid"
+	    ;;
 	minimal)
 	    # La URL es determinista: images/<nombre> en el repo DenverCoder1.
 	    fetch_url "https://raw.githubusercontent.com/DenverCoder1/minimalistic-wallpaper-collection/main/images/$key" "$id"
 	    ;;
 	*)
-	    echo "Ref desconocida: $ref (bing:FECHA | wallhaven:ID)"
+	    echo "Ref desconocida: $ref (bing:FECHA | wallhaven:ID | motionbgs:ID | desktophut:SLUG)"
 	    return 1
 	    ;;
     esac
