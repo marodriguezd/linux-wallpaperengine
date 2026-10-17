@@ -304,10 +304,12 @@ void WaylandOpenGLDriver::initWaylandRegistry () {
 }
 
 void WaylandOpenGLDriver::setupOutputLayerSurfaces () {
-    bool any = false;
+    const bool matchAll = m_context.settings.general.screenAll
+	|| m_context.settings.general.screenBackgrounds.contains ("all");
+    bool any = matchAll && !this->m_screens.empty ();
 
     for (const auto& o : this->m_screens) {
-	bool shouldSetup = m_context.settings.general.screenBackgrounds.contains (o->name);
+	bool shouldSetup = matchAll || m_context.settings.general.screenBackgrounds.contains (o->name);
 
 	// also check if this screen is in any span group
 	if (!shouldSetup) {

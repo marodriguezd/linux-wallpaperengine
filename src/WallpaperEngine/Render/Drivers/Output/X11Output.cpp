@@ -138,8 +138,12 @@ void X11Output::discoverOutputs (XRRScreenResources* screenResources) {
 	    }
 	}
 
+	const bool matchAll = this->m_context.settings.general.screenAll
+	    || this->m_context.settings.general.screenBackgrounds.find ("all")
+		!= this->m_context.settings.general.screenBackgrounds.end ();
+
 	// only keep info of registered screens
-	if (inSpanGroup
+	if (matchAll || inSpanGroup
 	    || this->m_context.settings.general.screenBackgrounds.find (info->name)
 		!= this->m_context.settings.general.screenBackgrounds.end ()) {
 	    sLog.out (
@@ -159,7 +163,11 @@ void X11Output::discoverOutputs (XRRScreenResources* screenResources) {
 }
 
 void X11Output::validateOutputs () const {
-    bool any = false;
+    const bool matchAll = this->m_context.settings.general.screenAll
+	|| this->m_context.settings.general.screenBackgrounds.find ("all")
+	    != this->m_context.settings.general.screenBackgrounds.end ();
+
+    bool any = matchAll && !this->m_screens.empty ();
 
     for (const auto& o : this->m_screens) {
 	const auto cur = this->m_context.settings.general.screenBackgrounds.find (o->name);

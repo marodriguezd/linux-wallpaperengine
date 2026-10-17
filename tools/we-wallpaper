@@ -20,6 +20,17 @@ elif [ -x /opt/fork/linux-wallpaperengine ]; then
 else
     ENGINE=linux-wallpaperengine
 fi
+
+kill_engine() {
+    if pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 || pidof linux-wallpaper >/dev/null 2>&1; then
+	pkill -f 'linux-wallpaperengin[e]' 2>/dev/null || killall linux-wallpaper 2>/dev/null || true
+	local t=0
+	while pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 && [ $t -lt 15 ]; do
+	    sleep 0.1
+	    t=$((t + 1))
+	done
+    fi
+}
 # Cursor: se hereda del entorno salvo override (antes Banana:30 fijo).
 # En dwm-titus el vivo es cat_cursors:32 vía theme-env.sh, así que heredar
 # respeta tu tema en cualquier X11.
@@ -55,13 +66,14 @@ power_defaults() {
     echo "WE_PAUSE_IGNORE_APPID=${WE_PAUSE_IGNORE_APPID:-}"
     echo "WE_NO_FULLSCREEN_PAUSE=${WE_NO_FULLSCREEN_PAUSE:-0}"
     echo "WE_HWDEC=${WE_HWDEC:-auto}"
+    echo "WE_MULTIMONITOR=${WE_MULTIMONITOR:-clone}"
 }
 load_power_conf() {
     [ -f "$POWER_CONF" ] || return 0
     local k v
     while IFS='=' read -r k v; do
 	case "$k" in
-	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC)
+	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC|WE_MULTIMONITOR)
 		# solo si el entorno no la trae puesta
 		eval "[ -n \"\${$k:-}\" ] || $k=\"\$v\""
 		;;
@@ -267,7 +279,7 @@ apply_wallpaper() {
 	return 1
     fi
 
-    killall "$ENGINE" 2>/dev/null
+    kill_engine
 
     local fork_args=()
     while IFS= read -r arg; do
@@ -321,7 +333,7 @@ apply_all() {
 	return 1
     fi
 
-    killall "$ENGINE" 2>/dev/null
+    kill_engine
 
     local fork_args=()
     while IFS= read -r arg; do
@@ -349,23 +361,12 @@ apply_all() {
     # overrides por wallpaper (props/<id>.conf), solo modo fondo fijo
     load_saved_props "$wallpaper_id" flags
 
-    # Un solo proceso con N pares --screen-root/--bg: evita la carrera del
-    # root-pixmap de N procesos concurrentes (visible en multi-head i3/bspwm)
-    local screen_args=() first_screen=""
-    while IFS= read -r screen; do
-	[ -z "$screen" ] && continue
-	[ -z "$first_screen" ] && first_screen="$screen"
-	screen_args+=(--screen-root "$screen" --bg "$wallpaper_id")
-    done < <(get_all_screens)
-
-    if [ ${#screen_args[@]} -eq 0 ]; then
-	echo "Error: no se detectó ningún monitor"
-	return 1
-    fi
-
+    # Con nuestro fork, --screen-all cubre todas las pantallas detectadas
+    # y comparte la misma instancia CWallpaper para decodificar 1 sola vez
     # shellcheck disable=SC2086
     env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
-	"${screen_args[@]}" \
+	--screen-all \
+	--bg "$wallpaper_id" \
 	"${fork_args[@]}" \
 	"${flags[@]}" \
 	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
@@ -390,7 +391,7 @@ playlist_play() {
     [ -f "$file" ] || { echo "Playlist no encontrada: $file"; return 1; }
     local fps=$(get_refresh_rate)
 
-    killall "$ENGINE" 2>/dev/null
+    kill_engine
 
     local fork_args=()
     while IFS= read -r arg; do
@@ -453,7 +454,12 @@ playlist_prev() {
 }
 
 stop_wallpaper() {
-    killall "$ENGINE" 2>/dev/null && echo "Wallpaper detenido" || echo "No hay wallpaper activo"
+    if pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 || pidof linux-wallpaper >/dev/null 2>&1; then
+	kill_engine
+	echo "Wallpaper detenido"
+    else
+	echo "No hay wallpaper activo"
+    fi
 }
 
 wait_for_backend() {
@@ -548,11 +554,126 @@ restore_wallpaper() {
 	echo "Wallpaper '$id' es video (usa nvdec-copy — Vulkan warnings son normales)"
     fi
 
-    if [ "$apply_type" = "all" ]; then
+    if [ "$apply_type" = "screens" ] && [ -f "$SCREENS_CONF" ]; then
+	restore_screens
+    elif [ "$apply_type" = "all" ] || [ "${WE_MULTIMONITOR:-clone}" = "clone" ]; then
 	apply_all "$id" "$mode"
     else
 	apply_id "$id" "$mode"
     fi
+}
+
+SCREENS_CONF="$STATE_DIR/screens.conf"
+
+screens_status() {
+    echo "=== Estado multimonitor [backend: $(detect_backend)] ==="
+    echo "Modo: ${WE_MULTIMONITOR:-clone}"
+    echo "Pantallas detectadas: $(get_all_screens 2>/dev/null | tr '\n' ' ')"
+    if [ -f "$SCREENS_CONF" ]; then
+	echo "Configuración por pantalla ($SCREENS_CONF):"
+	while IFS='=' read -r sc conf; do
+	    [ -n "$sc" ] && echo "  $sc -> $conf"
+	done < "$SCREENS_CONF"
+    else
+	echo "Sin configuración por pantalla guardada (usando modo: ${WE_MULTIMONITOR:-clone})"
+    fi
+}
+
+multimonitor_cmd() {
+    if [ -n "${1:-}" ]; then
+	case "$1" in
+	    clone|single|independent)
+		power_set "WE_MULTIMONITOR=$1"
+		[ "$1" = "clone" ] && rm -f "$SCREENS_CONF"
+		echo "Modo multimonitor fijado a: $1"
+		;;
+	    *)
+		echo "Modos válidos: clone, single, independent"
+		return 1
+		;;
+	esac
+    else
+	echo "Modo multimonitor actual: ${WE_MULTIMONITOR:-clone}"
+    fi
+}
+
+apply_screen() {
+    local screen="$1" id="$2" mode="${3:-lite}"
+    [ -n "$screen" ] && [ -n "$id" ] || { echo "Uso: we-wallpaper apply-screen <pantalla> <id> [modo]"; return 1; }
+    [ -d "$WE_DIR/$id" ] || { echo "Error: Wallpaper '$id' no encontrado"; return 1; }
+
+    mkdir -p "$STATE_DIR"
+    touch "$SCREENS_CONF"
+
+    # Actualizar screens.conf
+    python3 -c "
+import os
+sc, wp, md = '$screen', '$id', '$mode'
+cf = '$SCREENS_CONF'
+lines = []
+found = False
+if os.path.exists(cf):
+    for line in open(cf):
+        line = line.strip()
+        if not line: continue
+        parts = line.split('=', 1)
+        if parts[0] == sc:
+            lines.append(f'{sc}={wp}:{md}')
+            found = True
+        else:
+            lines.append(line)
+if not found:
+    lines.append(f'{sc}={wp}:{md}')
+with open(cf, 'w') as f:
+    f.write('\n'.join(lines) + '\n')
+"
+
+    restore_screens
+}
+
+restore_screens() {
+    [ -f "$SCREENS_CONF" ] || return 1
+    local fps=$(get_refresh_rate)
+
+    kill_engine
+
+    local fork_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && fork_args+=("$arg")
+    done < <(fork_flags)
+
+    local flags=(--scaling fill --silent)
+    if [ -n "${WE_FPS:-}" ]; then
+	flags+=(--fps "$WE_FPS")
+    elif [ -z "${WE_PROFILE:-}" ]; then
+	flags+=(--fps "$fps")
+    fi
+
+    # Generar args por pantalla leyendo screens.conf
+    local screen_args=() last_id=""
+    while IFS='=' read -r sc conf; do
+	[ -z "$sc" ] && continue
+	local sc_id="${conf%%:*}"
+	[ -n "$sc_id" ] && [ -d "$WE_DIR/$sc_id" ] || continue
+	screen_args+=(--screen-root "$sc" --bg "$sc_id")
+	last_id="$sc_id"
+    done < "$SCREENS_CONF"
+
+    if [ ${#screen_args[@]} -eq 0 ]; then
+	echo "Error: no hay pantallas válidas configuradas en $SCREENS_CONF"
+	return 1
+    fi
+
+    env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
+	"${screen_args[@]}" \
+	"${fork_args[@]}" \
+	"${flags[@]}" \
+	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+    disown $! 2>/dev/null || true
+
+    echo "Wallpapers independientes aplicados @ $(effective_fps)fps AC / ${WE_FPS_BATTERY:-15}fps batt"
+    save_state "${last_id:-multi}" "screens" "all" "screens"
+    [ -n "$last_id" ] && apply_theme "$(theme_image_for "$last_id")"
 }
 
 refresh_library() {
@@ -805,6 +926,7 @@ power_set() {
     local cur_backend="$WE_BACKEND" cur_layer="${WE_LAYER:-bottom}"
     local cur_active="${WE_PAUSE_ACTIVE_ONLY:-0}" cur_ignore="$WE_PAUSE_IGNORE_APPID"
     local cur_nofs="${WE_NO_FULLSCREEN_PAUSE:-0}" cur_hwdec="${WE_HWDEC:-auto}"
+    local cur_multimonitor="${WE_MULTIMONITOR:-clone}"
     for kv in "$@"; do
 	k="${kv%%=*}"; v="${kv#*=}"
 	[ "$k" != "$kv" ] || { echo "Ignorada (sin =): $kv"; ok=0; continue; }
@@ -880,6 +1002,14 @@ power_set() {
 		    *) echo "WE_HWDEC inválido: $v"; ok=0 ;;
 		esac
 		;;
+	    WE_MULTIMONITOR)
+		case "$v" in
+		    clone|single|independent)
+			cur_multimonitor="$v"
+			;;
+		    *) echo "WE_MULTIMONITOR inválido: $v (clone|single|independent)"; ok=0 ;;
+		esac
+		;;
 	    *)
 		echo "Clave desconocida: $k"; ok=0
 		;;
@@ -898,6 +1028,7 @@ WE_PAUSE_ACTIVE_ONLY=$cur_active
 WE_PAUSE_IGNORE_APPID=$cur_ignore
 WE_NO_FULLSCREEN_PAUSE=$cur_nofs
 WE_HWDEC=$cur_hwdec
+WE_MULTIMONITOR=$cur_multimonitor
 EOF
     echo "power: guardado en $POWER_CONF (aplica al próximo apply/restore)"
 }
@@ -1495,7 +1626,7 @@ apply_image() {
 	[ -f "$lab/$stem.$e" ] && file="$lab/$stem.$e" && break
     done
     [ -n "$file" ] || { echo "Imagen '$id' no encontrada en backgrounds-lab"; return 1; }
-    killall "$ENGINE" 2>/dev/null
+    kill_engine
     feh --bg-fill "$file" 2>/dev/null || { echo "feh falló"; return 1; }
     echo "Imagen $id en $screen (feh estático)"
     save_state "$id" "lite" "$screen" "image"
@@ -1507,6 +1638,7 @@ apply_image() {
 # no se mata la sesión: se vuelve al último bueno (current-id).
 apply_id() {
     [ -n "${1:-}" ] || { echo "Uso: we-wallpaper apply-id <id> [modo]"; return 1; }
+    local mode="${2:-${WE_MODE:-lite}}"
     case "$1" in
 	img-*) apply_image "$1" "$(get_primary_screen)" ;;
 	*)
@@ -1515,13 +1647,21 @@ apply_id() {
 		fallback=$(current_id 2>/dev/null)
 		if [ -n "$fallback" ] && [ "$fallback" != "$1" ] && [ -d "$WE_DIR/$fallback" ]; then
 		    echo "'$1' ya no está instalado; volviendo a '$fallback'"
-		    apply_wallpaper "$fallback" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)"
+		    if [ "${WE_MULTIMONITOR:-clone}" = "clone" ]; then
+			apply_all "$fallback" "$mode"
+		    else
+			apply_wallpaper "$fallback" "$mode" "$(get_primary_screen)"
+		    fi
 		    return $?
 		fi
 		echo "'$1' ya no está instalado (¿Steam unsubscribe?); usa 'we-wallpaper refresh'"
 		return 1
 	    fi
-	    apply_wallpaper "$1" "${2:-${WE_MODE:-lite}}" "$(get_primary_screen)" ;;
+	    if [ "${WE_MULTIMONITOR:-clone}" = "clone" ]; then
+		apply_all "$1" "$mode"
+	    else
+		apply_wallpaper "$1" "$mode" "$(get_primary_screen)"
+	    fi ;;
     esac
 }
 
@@ -1747,7 +1887,10 @@ usage() {
     echo "  apply <id> [modo] [pantalla]          Aplicar wallpaper"
     echo "  playlist-play <fich> [pant|all]      Playlist formato propio"
     echo "  playlist-next / playlist-prev       Saltar (SIGUSR1/2 al engine)"
-    echo "  apply-all <id> [modo]                 Aplicar a todos los monitores"
+    echo "  apply-all <id> [modo]                 Aplicar a todos los monitores (clone)
+  apply-screen <pant> <id> [modo]       Aplicar a una pantalla específica
+  screens                               Ver estado de pantallas y configuración
+  multimonitor [clone|single]           Ver o fijar modo multimonitor"
     echo "  restore                               Restaurar ultimo wallpaper guardado"
     echo "  stop                                  Detener"
     echo "  status                                Ver estado"
@@ -1839,6 +1982,9 @@ EOF
     make-previews) make_previews "$2" ;;
     apply)      apply_wallpaper "$2" "$3" "$4" ;;
     apply-all)  apply_all "$2" "$3" ;;
+    apply-screen) apply_screen "$2" "$3" "$4" ;;
+    screens)    screens_status ;;
+    multimonitor) multimonitor_cmd "$2" ;;
     playlist-play) playlist_play "$2" "$3" ;;
     playlist-next) playlist_next ;;
     playlist-prev) playlist_prev ;;

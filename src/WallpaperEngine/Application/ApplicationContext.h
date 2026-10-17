@@ -107,6 +107,8 @@ public:
 	    std::optional<PlaylistDefinition> defaultPlaylist;
 	    /** Span groups: multiple monitors sharing one stretched wallpaper */
 	    std::vector<SpanGroup> spanGroups;
+	    /** Apply wallpaper to all detected screens */
+	    bool screenAll = false;
 	} general;
 
 	/**

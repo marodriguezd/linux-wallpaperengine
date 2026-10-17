@@ -421,7 +421,7 @@ void ApplicationContext::loadSettingsFromArgv () {
 	})
 	.append ();
     backgroundMode.add_argument ("-r", "--screen-root")
-	.help ("The screen the following settings will have an effect on")
+	.help ("The screen the following settings will have an effect on (use 'all' for all screens)")
 	.action ([this, &lastScreen] (const std::string& value) -> void {
 	    if (this->settings.general.screenBackgrounds.find (value)
 		!= this->settings.general.screenBackgrounds.end ()) {
@@ -437,12 +437,30 @@ void ApplicationContext::loadSettingsFromArgv () {
 	    }
 
 	    this->settings.render.mode = DESKTOP_BACKGROUND;
+	    if (value == "all") {
+		this->settings.general.screenAll = true;
+	    }
 	    lastScreen = value;
 	    this->settings.general.screenBackgrounds[lastScreen] = "";
 	    this->settings.general.screenScalings[lastScreen] = this->settings.render.window.scalingMode;
 	    this->settings.general.screenClamps[lastScreen] = this->settings.render.window.clamp;
 	})
 	.append ();
+    backgroundMode.add_argument ("--screen-all")
+	.help ("Apply the background to all connected screens")
+	.flag ()
+	.action ([this, &lastScreen] (const std::string& /*unused*/) -> void {
+	    if (this->settings.render.mode == EXPLICIT_WINDOW) {
+		sLog.exception ("Cannot run in both background and window mode");
+	    }
+
+	    this->settings.render.mode = DESKTOP_BACKGROUND;
+	    this->settings.general.screenAll = true;
+	    lastScreen = "all";
+	    this->settings.general.screenBackgrounds[lastScreen] = "";
+	    this->settings.general.screenScalings[lastScreen] = this->settings.render.window.scalingMode;
+	    this->settings.general.screenClamps[lastScreen] = this->settings.render.window.clamp;
+	});
     backgroundGroup.add_argument ("--screen-span")
 	.help ("Comma-separated list of screens to span a single wallpaper across")
 	.action ([this, &lastScreen] (const std::string& value) -> void {
@@ -578,14 +596,20 @@ void ApplicationContext::loadSettingsFromArgv () {
 		sLog.exception ("Invalid scaling mode: ", value);
 	    }
 
+	    this->settings.render.window.scalingMode = mode;
+
 	    if (this->settings.render.mode == DESKTOP_BACKGROUND) {
-		this->settings.general.screenScalings[lastScreen] = mode;
+		if (!lastScreen.empty ()) {
+		    this->settings.general.screenScalings[lastScreen] = mode;
+		} else {
+		    for (auto& [screen, sMode] : this->settings.general.screenScalings) {
+			sMode = mode;
+		    }
+		}
 		// also update span group if targeting one
 		if (lastScreen.rfind ("span:", 0) == 0 && !this->settings.general.spanGroups.empty ()) {
 		    this->settings.general.spanGroups.back ().scaling = mode;
 		}
-	    } else {
-		this->settings.render.window.scalingMode = mode;
 	    }
 	})
 	.append ();
@@ -608,14 +632,20 @@ void ApplicationContext::loadSettingsFromArgv () {
 		sLog.exception ("Invalid clamp mode: ", value);
 	    }
 
+	    this->settings.render.window.clamp = flags;
+
 	    if (this->settings.render.mode == DESKTOP_BACKGROUND) {
-		this->settings.general.screenClamps[lastScreen] = flags;
+		if (!lastScreen.empty ()) {
+		    this->settings.general.screenClamps[lastScreen] = flags;
+		} else {
+		    for (auto& [screen, sFlags] : this->settings.general.screenClamps) {
+			sFlags = flags;
+		    }
+		}
 		// also update span group if targeting one
 		if (lastScreen.rfind ("span:", 0) == 0 && !this->settings.general.spanGroups.empty ()) {
 		    this->settings.general.spanGroups.back ().clamp = flags;
 		}
-	    } else {
-		this->settings.render.window.clamp = flags;
 	    }
 	})
 	.append ();

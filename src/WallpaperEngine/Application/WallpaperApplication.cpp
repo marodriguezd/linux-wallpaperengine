@@ -196,17 +196,45 @@ void WallpaperApplication::loadBackgrounds () {
 	return;
     }
 
+    const bool matchAll = this->m_context.settings.general.screenAll
+	|| this->m_context.settings.general.screenBackgrounds.find ("all")
+	    != this->m_context.settings.general.screenBackgrounds.end ();
+
+    std::filesystem::path allPath = "";
+    if (matchAll) {
+	const auto allIt = this->m_context.settings.general.screenBackgrounds.find ("all");
+	if (allIt != this->m_context.settings.general.screenBackgrounds.end () && !allIt->second.empty ()) {
+	    allPath = allIt->second;
+	} else {
+	    allPath = this->m_context.settings.general.defaultBackground;
+	}
+	if (!allPath.empty ()) {
+	    this->m_backgrounds["all"] = this->loadBackground (allPath);
+	}
+    }
+
+    std::map<std::filesystem::path, std::string> pathToKey;
+    if (matchAll && !allPath.empty ()) {
+	pathToKey[allPath] = "all";
+    }
+
     for (const auto& [screen, path] : this->m_context.settings.general.screenBackgrounds) {
-	// skip span group synthetic keys here, they're handled below
-	if (screen.rfind ("span:", 0) == 0) {
+	if (screen.rfind ("span:", 0) == 0 || screen == "all") {
 	    continue;
 	}
-	// screens with no path should use the default
-	if (path.empty ()) {
-	    this->m_backgrounds[screen] = this->loadBackground (this->m_context.settings.general.defaultBackground);
-	} else {
-	    this->m_backgrounds[screen] = this->loadBackground (path);
+	const auto bgPath = path.empty () ? this->m_context.settings.general.defaultBackground : path;
+	if (bgPath.empty ()) {
+	    continue;
 	}
+
+	if (pathToKey.find (bgPath) == pathToKey.end ()) {
+	    this->m_backgrounds[screen] = this->loadBackground (bgPath);
+	    pathToKey[bgPath] = screen;
+	}
+    }
+
+    if (this->m_backgrounds.empty () && !this->m_context.settings.general.defaultBackground.empty ()) {
+	this->m_backgrounds["default"] = this->loadBackground (this->m_context.settings.general.defaultBackground);
     }
 
     // Load one background per span group
@@ -733,26 +761,107 @@ void WallpaperApplication::prepareOutputs () {
 	= std::make_unique<WallpaperEngine::Render::RenderContext> (*m_videoDriver, *this, *this->m_mediaSource);
     // create a new background for each screen
 
-    // set all the specific wallpapers required (skip span group synthetic keys)
-    for (const auto& [background, info] : this->m_backgrounds) {
-	if (background.rfind ("span:", 0) == 0) {
+    const bool matchAll = this->m_context.settings.general.screenAll
+	|| this->m_context.settings.general.screenBackgrounds.find ("all")
+	    != this->m_context.settings.general.screenBackgrounds.end ();
+
+    std::filesystem::path allPath = "";
+    if (matchAll) {
+	const auto allIt = this->m_context.settings.general.screenBackgrounds.find ("all");
+	if (allIt != this->m_context.settings.general.screenBackgrounds.end () && !allIt->second.empty ()) {
+	    allPath = allIt->second;
+	} else {
+	    allPath = this->m_context.settings.general.defaultBackground;
+	}
+    }
+
+    std::map<std::filesystem::path, std::string> pathToKey;
+    if (matchAll && !allPath.empty () && this->m_backgrounds.find ("all") != this->m_backgrounds.end ()) {
+	pathToKey[allPath] = "all";
+    }
+    for (const auto& [screen, path] : this->m_context.settings.general.screenBackgrounds) {
+	if (screen.rfind ("span:", 0) == 0 || screen == "all") {
 	    continue;
 	}
-	const auto scalingIt = this->m_context.settings.general.screenScalings.find (background);
-	const auto clampIt = this->m_context.settings.general.screenClamps.find (background);
-	const auto scaling = scalingIt != this->m_context.settings.general.screenScalings.end ()
+	const auto bgPath = path.empty () ? this->m_context.settings.general.defaultBackground : path;
+	if (!bgPath.empty () && this->m_backgrounds.find (screen) != this->m_backgrounds.end ()) {
+	    pathToKey[bgPath] = screen;
+	}
+    }
+
+    // Cache of instantiated CWallpaper instances keyed by loaded project key
+    std::map<std::string, std::shared_ptr<WallpaperEngine::Render::CWallpaper>> sharedWallpapers;
+
+    const auto& viewports = m_renderContext->getOutput ().getViewports ();
+
+    for (const auto& [viewportName, viewport] : viewports) {
+	// Skip span group viewports (handled below)
+	bool inSpan = false;
+	for (const auto& spanGroup : this->m_context.settings.general.spanGroups) {
+	    if (std::find (spanGroup.screens.begin (), spanGroup.screens.end (), viewportName) != spanGroup.screens.end ()) {
+		inSpan = true;
+		break;
+	    }
+	}
+	if (inSpan) {
+	    continue;
+	}
+
+	// Resolve target path for this viewport
+	std::filesystem::path targetPath;
+	const auto screenIt = this->m_context.settings.general.screenBackgrounds.find (viewportName);
+	if (screenIt != this->m_context.settings.general.screenBackgrounds.end () && !screenIt->second.empty ()) {
+	    targetPath = screenIt->second;
+	} else if (matchAll && !allPath.empty ()) {
+	    targetPath = allPath;
+	} else {
+	    targetPath = this->m_context.settings.general.defaultBackground;
+	}
+
+	// Find the project key in m_backgrounds
+	std::string projectKey;
+	auto pIt = pathToKey.find (targetPath);
+	if (pIt != pathToKey.end ()) {
+	    projectKey = pIt->second;
+	} else if (this->m_backgrounds.find (viewportName) != this->m_backgrounds.end ()) {
+	    projectKey = viewportName;
+	} else if (matchAll && this->m_backgrounds.find ("all") != this->m_backgrounds.end ()) {
+	    projectKey = "all";
+	} else if (!this->m_backgrounds.empty ()) {
+	    projectKey = this->m_backgrounds.begin ()->first;
+	}
+
+	auto bgIt = this->m_backgrounds.find (projectKey);
+	if (bgIt == this->m_backgrounds.end () || !bgIt->second) {
+	    sLog.error ("Cannot find background for screen ", viewportName, " (key: ", projectKey, ")");
+	    continue;
+	}
+
+	const auto scalingIt = this->m_context.settings.general.screenScalings.find (viewportName);
+	const auto scaling = (scalingIt != this->m_context.settings.general.screenScalings.end ()
+			      && scalingIt->second != WallpaperEngine::Render::WallpaperState::TextureUVsScaling::DefaultUVs)
 	    ? scalingIt->second
 	    : this->m_context.settings.render.window.scalingMode;
+
+	const auto clampIt = this->m_context.settings.general.screenClamps.find (viewportName);
 	const auto clamp = clampIt != this->m_context.settings.general.screenClamps.end ()
 	    ? clampIt->second
 	    : this->m_context.settings.render.window.clamp;
 
-	m_renderContext->setWallpaper (
-	    background,
-	    WallpaperEngine::Render::CWallpaper::fromWallpaper (
-		*info->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), scaling, clamp
-	    )
-	);
+	// Check if a CWallpaper already exists for this projectKey
+	auto sharedIt = sharedWallpapers.find (projectKey);
+	if (sharedIt != sharedWallpapers.end ()) {
+	    sLog.out ("Reusing shared wallpaper instance for screen ", viewportName, " (project: ", projectKey, ")");
+	    m_renderContext->setWallpaper (viewportName, sharedIt->second);
+	} else {
+	    sLog.out ("Creating wallpaper instance for screen ", viewportName, " (project: ", projectKey, ")");
+	    auto newWp = WallpaperEngine::Render::CWallpaper::fromWallpaper (
+		*bgIt->second->wallpaper, *m_renderContext, *m_audioContext, m_browserContext.get (), scaling, clamp
+	    );
+	    std::shared_ptr<WallpaperEngine::Render::CWallpaper> shared (std::move (newWp));
+	    sharedWallpapers[projectKey] = shared;
+	    m_renderContext->setWallpaper (viewportName, shared);
+	}
     }
 
     // Set up span groups: one shared wallpaper per group, registered for each viewport
