@@ -1,0 +1,16 @@
+# LeakSanitizer suppressions for process-global allocations made by third-party
+# runtime libraries. These are initialised once per process and never released,
+# which LSan reports as leaks when the test binary exits:
+#
+#   - the proprietary NVIDIA GL driver keeps per-process dispatch state alive
+#     even after every EGL surface and context has been destroyed;
+#   - libmpv registers with the session D-Bus on first use and leaves the bus
+#     connection to process teardown.
+#
+# Leaks in our own code are still reported: nothing below matches a frame from
+# this repository.
+leak:libnvidia-glsi
+leak:libnvidia-glcore
+leak:libGLX_nvidia
+leak:libEGL_nvidia
+leak:libdbus-1

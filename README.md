@@ -12,6 +12,13 @@ High-performance, battery-aware Wallpaper Engine runtime for Linux with zero-dup
 ![Power Targets](https://img.shields.io/badge/power-24%20FPS%20AC%20%7C%2015%20FPS%20Batt-orange?style=flat-square)
 ![Hardware Decode](https://img.shields.io/badge/hwdec-VA--API%20%7C%20NVDEC%20%7C%20CUDA-purple?style=flat-square)
 
+> [!IMPORTANT]
+> This branch (`feat/rebuild-from-scratch`) ships a ground-up C++23 rebuild of the
+> runtime as the `we` binary. Build instructions, the CLI, the display backends
+> and the current verification status are documented in
+> [docs/REBUILD.md](docs/REBUILD.md). The legacy `linux-wallpaperengine` target of
+> the sections below is kept for reference and is no longer compiled.
+
 ---
 
 ## Overview

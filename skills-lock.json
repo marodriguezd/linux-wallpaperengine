@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "skills": {
+    "cmake": {
+      "source": "mohitmishra786/low-level-dev-skills",
+      "sourceType": "github",
+      "skillPath": "skills/build-systems/cmake/SKILL.md",
+      "computedHash": "ca5d2b6e4df8cc503ac624a44d61bf5d823abba1eb1fbc0de0d6969eba351db6"
+    },
+    "cpp-pro": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "skillPath": "skills/cpp-pro/SKILL.md",
+      "computedHash": "0528cb91e6c818c52b0d6c547839cddf410c19f8bd22230ad1dd8babb11afee7"
+    },
+    "modern-cpp": {
+      "source": "trailofbits/skills",
+      "sourceType": "github",
+      "skillPath": "plugins/modern-cpp/skills/modern-cpp/SKILL.md",
+      "computedHash": "400548bf5226487baaeb6c8f4d2b4ba6abb44444bc8aa25d27ed2347b5445556"
+    }
+  }
+}
