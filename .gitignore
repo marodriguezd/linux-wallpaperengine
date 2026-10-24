@@ -1,13 +1,74 @@
-cmake-build-*
-.idea
-.cache/
+# Build output and in-source CMake artifacts
 build/
+cmake-build-*/
+out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+build.ninja
+.ninja_*
+Testing/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+
+# Coverage and profiling
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+coverage/
+*.log
+
+# Editors and OS metadata
+.idea/
 .vscode/
 .zed/
+.cache/
+.DS_Store
+*.swp
+*~
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Vendored dependencies and generated protocol code
 third_party/
-packaging/archlinux/*
-!packaging/archlinux/PKGBUILD
 *-protocol.o
 *-protocol.c
 *-protocol.h
-AGENTS.md
+
+# Packaging helpers
+packaging/archlinux/*
+!packaging/archlinux/PKGBUILD
+
+# Local AI/agent working files.
+# Only AGENTS.md and ABOUT.md are part of the repository.
+.agents/
+.freebuff/
+.freebuf/
+.claude/
+.cursor/
+.codex/
+.gemini/
+.windsurf/
+.aider*
+.continue/
+.opencode/
+.specstory/
+.mcp.json
+skills-lock.json
+HANDOFF.md
+handoff-*.md
+handoffs/
+prompt.txt
