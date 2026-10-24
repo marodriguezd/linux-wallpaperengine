@@ -1,0 +1,5 @@
+Repo linux-wallpaperengine (rama feat/rebuild-from-scratch): lee HANDOFF.md y todos los markdowns que referencia (AGENTS.md, ABOUT.md, docs/REBUILD.md, docs/rendering/, docs/textures/) antes de planificar.
+Objetivo: implementar el render target offscreen `_rt_FullFrameBuffer` y la cadena de post-proceso de scene.json; empieza por chromatic aberration de 3615154110 y sigue con blur/bloom de 2638079178, sustituyendo la captura de REFLECTION por el FBO de escena.
+Mantén LIGHTING/REFLECTION y los 80 tests; añade tests observables del post-proceso y verifica con build debug, ctest, asan y `we run 3615154110 --backend headless --frames 90` sin warns nuevos.
+No hagas commit/push ni toques CMakeLists.txt, README.md, protocols/ ni cambios ajenos; usa build/debug/bin/we y no modifiques tests/lsan.supp.
+ASan sólo falla por libcuda (6509 B/135 allocs); repórtalo y pregunta antes de cualquier supresión.
