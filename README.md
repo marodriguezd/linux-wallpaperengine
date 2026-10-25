@@ -4,253 +4,196 @@
 
 # Linux Wallpaper Engine
 
-High-performance, battery-aware Wallpaper Engine runtime for Linux with zero-duplicate multimonitor decoding, hardware acceleration, and native desktop integration.
+High-performance, modern C++23 Wallpaper Engine runtime for Linux with zero-duplicate multimonitor decoding, hardware acceleration, full particle simulation, and native desktop integration.
 
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
 ![Platform](https://img.shields.io/badge/platform-Linux%20(X11%20%7C%20Wayland)-blue?style=flat-square)
-![Language](https://img.shields.io/badge/language-C%2B%2B17-blue?style=flat-square)
-![Power Targets](https://img.shields.io/badge/power-24%20FPS%20AC%20%7C%2015%20FPS%20Batt-orange?style=flat-square)
-![Hardware Decode](https://img.shields.io/badge/hwdec-VA--API%20%7C%20NVDEC%20%7C%20CUDA-purple?style=flat-square)
-
-> [!IMPORTANT]
-> This branch (`feat/rebuild-from-scratch`) ships a ground-up C++23 rebuild of the
-> runtime as the `we` binary. Build instructions, the CLI, the display backends
-> and the current verification status are documented in
-> [docs/REBUILD.md](docs/REBUILD.md). The legacy `linux-wallpaperengine` target of
-> the sections below is kept for reference and is no longer compiled.
+![Language](https://img.shields.io/badge/language-C%2B%2B23-blue?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-86%2F86%20passing-brightgreen?style=flat-square)
+![Sanitizers](https://img.shields.io/badge/sanitizers-ASan%20%7C%20LSan%20clean-purple?style=flat-square)
 
 ---
 
 ## Overview
 
-This repository is an optimized fork of [Almamu/linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine) engineered for daily driver laptop and multi-display workstation workflows. It brings animated wallpapers from Steam's Wallpaper Engine to Linux desktops without draining your battery or overloading your GPU.
+**Linux Wallpaper Engine** brings animated Steam Wallpaper Engine wallpapers to Linux desktops without draining your battery or overloading your GPU. Built from the ground up in modern C++23, it delivers a single unified executable: `we`.
 
 ```
 [ Displays: eDP-1 (144Hz) + HDMI-1 (75Hz) ]
            │
            ├─► Viewport 1 (eDP-1)  ──┐
-           │                         ├─► Shared CWallpaper Instance
-           └─► Viewport 2 (HDMI-1) ──┘     ├─► Single libmpv Decoder (VA-API on iGPU)
-                                           └─► Single Scene/Shader Frame Render
+           │                         ├─► Shared Wallpaper Instance
+           └─► Viewport 2 (HDMI-1) ──┘     ├─► Single libmpv Decoder (Hardware Acceleration)
+                                           └─► Single Scene / Particles / Shader Pass
 ```
 
-> [!NOTE]
-> When cloning a wallpaper across multiple monitors, the engine deduplicates wallpaper instances. Video wallpapers execute **a single `libmpv` decode pipeline** and blit to each viewport, cutting CPU and GPU usage in half compared to independent instances.
+> [!TIP]
+> When running across multiple monitors, the engine reuses video decodes and rendered scene framebuffers across viewports, eliminating redundant GPU workloads and memory allocations.
 
 ---
 
 ## Key Features
 
-* **Zero-Duplicate Multimonitor Decoding**
-  * `--screen-all` automatically detects and spans/clones across all connected outputs (`eDP-1`, `HDMI-1`, `DP-1`).
-  * Shared `CWallpaper` instances reuse video streams and rendered scene frames across viewports, eliminating duplicate decodes.
-  * Independent per-screen configurations (`--screen-root <output> --bg <id>`) remain fully supported within a single process to prevent X11 root window pixmap flickering.
-* **Intelligent Power Management**
-  * Pinned power targets: **24 FPS on AC / 15 FPS on battery** out of the box.
-  * Dynamic power-source polling via UPower with direct `/sys/class/power_supply` fallback.
-  * Zero-wake idle detection (`--idle-pause <minutes>`) utilizing the X11 `MIT-SCREEN-SAVER` extension.
-  * Preset profiles: `--profile lite` (15 FPS, disabled effects), `--profile balanced` (30 FPS), `--profile full` (60 FPS).
-* **iGPU Isolation & Hardware Video Decoding**
-  * Configurable hardware acceleration (`--hwdec vaapi-copy`, `vaapi`, `nvdec`, `cuda`, `vulkan`).
-  * Seamless iGPU targeting (`DRI_PRIME`, `LIBVA_DRIVER_NAME=iHD`) allowing dedicated GPUs (e.g. NVIDIA RTX Optimus) to remain suspended in **D3cold** state.
-* **C++ Local Library & Offline Catalog**
-  * Built-in `Library` scanner (`--list-library`, `--search <query>`, `--json`, `--fav <id>`).
-  * Persistent caching in `~/.cache/linux-wallpaperengine/library.json` with graceful handling of unsubscribed or missing workshop items.
-* **MPRIS D-Bus Media Controller**
-  * Built-in D-Bus media player server (`org.mpris.MediaPlayer2.linux-wallpaperengine`) exposing playback status, track metadata, and media key support.
-* **Desktop Automation Suite (`we-wallpaper`)**
-  * Unified management script for applying, switching, restoring, and querying wallpapers.
-  * Web store scrapers for MotionBGS (4K/HD video), DesktopHut, Wallhaven, Bing Daily UHD, and Minimalist backgrounds.
-  * Automatic synchronization with window manager color palettes and systemd user services.
-* **Quickshell Gallery Interface**
-  * Full desktop visual browser under `contrib/quickshell-gallery/` with search filters, real-time property tuning, and live explore tabs.
+* **Complete Scene & 2D/3D Quad Pipeline**
+  * Exact transformation calculations: top-left origin ($y$-up in viewport), scale, and clockwise radian rotation (`angles.z`).
+  * Dynamic animated spritesheets (`TEXS0001` and `TEXS0003`) with frametime cycling and sub-rectangle UV mapping.
+  * Correct auto-cropped and padded texture sampling for DXT1, DXT3, DXT5, ARGB8888, and RG88 (luminance-alpha) formats.
+* **Full Particle Simulation Engine**
+  * Real-time GPU batch-quad rendering (`Renderer::draw_quad`) for rain, snow, fog, twinkling stars, and light halos.
+  * Emitters: `boxrandom`, `sphererandom` with continuous (`rate`) and burst (`instantaneous`) emission.
+  * Initializers & Operators: `lifetime`, `size`, `velocity`, `alpha`, `color`, `rotation`, `angularvelocity`, `movement` (with gravity and drag), `alphafade`, `oscillatealpha`, `oscillateposition`, `sizechange`.
+  * Velocity-aligned particles (`spritetrail`), additive (`additive`) and refractive/translucent blending modes.
+* **PBR Lighting & Screen-Space Reflections**
+  * Point lights (`lpoint`), ambient lighting term, and GGX specular calculations.
+  * PBR material masks (`metallic`, `roughness`, `reflection`, `emissive`).
+  * Real-time screen-space reflections using normal maps and offscreen captured scene framebuffers.
+* **Full-Frame Post-Processing Pipeline (`_rt_FullFrameBuffer`)**
+  * Ping-pong offscreen FBO compositing supporting chromatic aberration, blur, bloom, and multi-pass effects.
+  * Dynamic shader timers (`g_Time`) and automatic texture/sampler slot binding.
+* **In-Situ `.pkg` Archive Reader**
+  * High-performance memory mapping without extracting files to disk.
+  * Automatically resolves standard `scene.pkg`, `gifscene.pkg`, and custom `.pkg` archives.
+* **Zero-Configuration Steam Discovery**
+  * Auto-locates Steam libraries across native paths, Flatpak, Snap, and Proton prefixes.
+  * Case-insensitive Virtual File System (VFS) to seamlessly resolve Windows case variations.
+* **Multiple Display Backends**
+  * `x11-desktop`: Zero-copy presentation via EGL desktop windows.
+  * `x11-root`: Draws directly to the X11 root window.
+  * `wayland`: Native Wayland integration.
+  * `headless`: Offscreen rendering with PBuffer support and frame capture (`--screenshot`).
+* **Power Awareness & Presets**
+  * Dynamic AC/battery rate management (`battery`, `balanced`, `smooth` presets).
+  * Automatically pauses rendering when covered by fullscreen applications.
 
 ---
 
-## Architecture & Visuals
+## Architecture
 
-### Local Library & Property Controls
-The integrated Quickshell gallery provides instant browsing, property customization (colors, sliders, toggles), and active state badging:
+The project is structured into modular modern C++23 libraries under `src/`:
 
-![Local Gallery Overview](docs/images/gallery-local.png)
-
-### Web Catalog & Remote Discovery
-Explore and download backgrounds directly from community sources without opening a browser:
-
-![Explore Store Overview](docs/images/gallery-explore.png)
-
----
-
-## Prerequisites
-
-To render Steam Workshop wallpapers, you must own and install **Wallpaper Engine** via Steam. The engine automatically inspects standard Steam library paths:
-
-```
-~/.steam/steam/steamapps/common/wallpaper_engine/assets
-~/.local/share/Steam/steamapps/common/wallpaper_engine/assets
-~/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/common/wallpaper_engine/assets
-```
-
-> [!IMPORTANT]
-> If assets reside in a non-standard directory, provide the path via `--assets-dir /path/to/assets`.
-
-### Dependencies
-
-#### Fedora 40 / 41 / 42 / 44
-```bash
-sudo dnf install gcc g++ cmake libXrandr-devel libXinerama-devel libXcursor-devel \
-  libXi-devel mesa-libGL-devel glew-devel freeglut-devel SDL2-devel lz4-devel \
-  ffmpeg ffmpeg-free-devel libXxf86vm-devel glm-devel glfw-devel mpv mpv-devel \
-  pulseaudio-libs-devel fftw-devel gmp-devel
-```
-
-#### Ubuntu 22.04 / 24.04
-```bash
-sudo apt-get install build-essential cmake libxrandr-dev libxinerama-dev libxcursor-dev \
-  libxi-dev libgl-dev libglew-dev freeglut3-dev libsdl2-dev liblz4-dev libavcodec-dev \
-  libavformat-dev libavutil-dev libswscale-dev libxxf86vm-dev libglm-dev libglfw3-dev \
-  libmpv-dev mpv libpulse-dev libfftw3-dev libfreetype-dev
-```
-
----
-
-## Build & Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone --recurse-submodules https://github.com/marodriguezd/linux-wallpaperengine.git
-   cd linux-wallpaperengine
-   ```
-
-2. **Configure and compile:**
-   ```bash
-   mkdir -p build && cd build
-   cmake -DCMAKE_BUILD_TYPE=Release ..
-   make -j$(nproc)
-   ```
-
-3. **Install system-wide:**
-   ```bash
-   sudo install -m 755 output/linux-wallpaperengine /opt/fork/linux-wallpaperengine
-   sudo install -m 755 output/liblinux-wallpaperengine-lib.so /opt/fork/liblinux-wallpaperengine-lib.so
-   install -m 755 ../tools/we-wallpaper ~/.local/bin/we-wallpaper
-   ```
-
----
-
-## Quickstart & Examples
-
-### Multimonitor Cloned Setup (Shared Decode)
-Replicate a wallpaper across all active outputs with a single video decode pass:
-```bash
-linux-wallpaperengine --screen-all --bg 3726414565 --fps 24 --scaling fill --silent
-```
-
-### Multimonitor Independent Setup
-Display distinct backgrounds per monitor in a single process without root pixmap collision:
-```bash
-linux-wallpaperengine \
-  --screen-root eDP-1 --bg desktophut-sanyo \
-  --screen-root HDMI-1 --bg 3726414565 \
-  --fps 24 --scaling fill --silent
-```
-
-### Span Across Multiple Displays
-Stretch a single high-resolution background across combined monitors:
-```bash
-linux-wallpaperengine --screen-span eDP-1,HDMI-1 --bg 1845706469 --scaling fill
-```
-
-### Automation with `we-wallpaper`
-The companion helper simplifies daily execution:
-
-```bash
-# Check status, running PID, and hardware usage
-we-wallpaper status
-
-# View detected screens and multimonitor mode
-we-wallpaper screens
-
-# Set multimonitor mode (clone or single)
-we-wallpaper multimonitor clone
-
-# Apply a wallpaper across all screens
-we-wallpaper apply-all desktophut-sanyo lite
-
-# Apply different wallpapers per screen
-we-wallpaper apply-screen eDP-1 desktophut-sanyo lite
-we-wallpaper apply-screen HDMI-1 3726414565 lite
-
-# Inspect or adjust persistent power configuration
-we-wallpaper power
-we-wallpaper power-set WE_FPS=24 WE_FPS_BATTERY=15 WE_HWDEC=vaapi-copy
-
-# Toggle favorite
-we-wallpaper fav 3726414565
-```
-
----
-
-## CLI Options Reference
-
-| Flag / Option | Description |
+| Module | Description |
 | :--- | :--- |
-| `--screen-all` | Replicate wallpaper on all detected screens with shared decode |
-| `--screen-root <output>` | Target specific monitor (e.g. `eDP-1`, `HDMI-1`) |
-| `--screen-span <o1,o2>` | Stretch wallpaper across listed displays |
-| `--bg <id/path>` | Specify background Steam Workshop ID or path |
-| `--fps <n>` | Set maximum target frame rate on AC (default: `24`) |
-| `--fps-battery <n>` | Target frame rate when on battery (default: `15`, `0` = pause) |
-| `--pause-on-battery` | Fully freeze rendering when disconnected from AC |
-| `--idle-pause <min>` | Pause rendering when user is inactive for N minutes (X11) |
-| `--hwdec <backend>` | Set mpv hardware decoding backend (`auto`, `vaapi-copy`, `nvdec`, `cuda`) |
-| `--profile <mode>` | Instant configuration profile (`lite`, `balanced`, `full`) |
-| `--scaling <mode>` | Texture scaling mode: `fill`, `fit`, `stretch`, or `default` |
-| `--clamping <mode>` | Texture clamping mode: `clamp`, `border`, `repeat` |
-| `--silent`, `-s` | Disable wallpaper audio playback |
-| `--volume <0-128>` | Set wallpaper audio volume |
-| `--list-properties` | Output customizable wallpaper shader properties |
-| `--set-property k=v` | Override wallpaper property (color, toggle, speed, amount) |
-| `--list-library` | Scan and list installed workshop items |
-| `--search <term>` | Query installed library items |
-| `--json` | Format library and property listings as JSON |
-| `--version` | Display fork version and feature flags |
+| `src/core` | `std::expected` error handling, zero-cost logging, math types (`Vec2`, `Vec3`, `Mat4`), LZ4 decompression, memory-mapped files |
+| `src/steam` | VDF parsing, Steam library discovery (Native/Flatpak/Snap/Proton), case-insensitive VFS, zero-copy `.pkg` reader |
+| `src/gfx` | EGL context management, GLSL shaders, textures, framebuffers, batch quad renderer |
+| `src/display` | Display drivers: `x11-desktop`, `x11-root`, `wayland`, `headless` |
+| `src/scene` | Project/scene JSON parsing, TEX/TEXB textures, spritesheets, particle systems, PBR lighting, FBO effects, `VideoPlayer` (libmpv) |
+| `src/power` | Battery monitoring and frame pacing |
+| `src/presets` | Performance profiles (`battery`, `balanced`, `smooth`) |
+| `src/app` | Core engine lifecycle, multimonitor orchestration, render loop |
+| `src/cli` | The `we` command-line executable |
+| `tests/` | Unit test suite (`we_tests`) with test harness and fixtures |
 
 ---
 
-## Configuration & Persistence
+## Prerequisites & Dependencies
 
-Runtime power parameters are stored in `~/.config/we-wallpaper/power.conf`:
+To render Steam Workshop wallpapers, you must own and install **Wallpaper Engine** via Steam. The engine automatically finds your assets.
 
-```ini
-WE_PROFILE=
-WE_FPS=24
-WE_FPS_BATTERY=15
-WE_PAUSE_ON_BATTERY=0
-WE_IDLE_PAUSE=0
-WE_BACKEND=x11
-WE_LAYER=bottom
-WE_PAUSE_ACTIVE_ONLY=0
-WE_PAUSE_IGNORE_APPID=
-WE_NO_FULLSCREEN_PAUSE=0
-WE_HWDEC=vaapi-copy
-WE_MULTIMONITOR=clone
+### Fedora (40 / 41 / 42+)
+```bash
+sudo dnf install gcc g++ cmake ninja-build \
+  mesa-libEGL-devel mesa-libGL-devel libX11-devel libXrandr-devel \
+  wayland-devel wayland-protocols-devel mpv-devel lz4-devel
 ```
 
-> [!TIP]
-> Environment variables take precedence over `power.conf`. You can temporarily override any setting for testing:
-> ```bash
-> WE_FPS=60 we-wallpaper restore
-> ```
+### Ubuntu / Debian (24.04+)
+```bash
+sudo apt-get install build-essential cmake ninja-build \
+  libegl1-mesa-dev libgl1-mesa-dev libx11-dev libxrandr-dev \
+  libwayland-dev wayland-protocols libmpv-dev liblz4-dev
+```
+
+### Arch Linux
+```bash
+sudo pacman -S base-devel cmake ninja \
+  mesa libglvnd libx11 libxrandr wayland wayland-protocols mpv lz4
+```
 
 ---
 
-## Systemd Service Integration
+## Building
 
-For background execution on session login, enable the user service:
+The project uses modern CMake presets:
+
+### 1. Optimized Release Build
+```bash
+cmake --preset release
+cmake --build --preset release
+```
+The resulting binary will be at `./build/release/bin/we`.
+
+### 2. Debug Build & Unit Tests
+```bash
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+```
+
+### 3. AddressSanitizer & LeakSanitizer (ASan / LSan)
+```bash
+cmake --preset asan
+cmake --build --preset asan
+ctest --preset asan
+```
+
+---
+
+## CLI Usage (`we`)
 
 ```bash
-systemctl --user enable --now we-wallpaper.service
+we 2.0.0 - Wallpaper Engine runtime for Linux
+
+Usage:
+  we run PATH|WORKSHOP_ID [options]
+  we list [--json]
+  we steam [--json]
+  we doctor
+  we vfs --root DIR [--list] PATH
+  we pkg ARCHIVE [--list] [--extract ENTRY --out FILE]
+  we --version
 ```
 
-This service invokes `we-wallpaper restore` after your display manager and X11/Wayland socket are available.
+### Common Examples
+
+#### Run a Workshop Wallpaper
+```bash
+# By workshop ID:
+we run 3615154110
+
+# Target a specific monitor:
+we run 3615154110 --output HDMI-1
+
+# Apply a preset (battery: 15fps, balanced: 30fps, smooth: 60fps):
+we run 3615154110 --preset smooth
+
+# Run headless and export a screenshot after 60 frames:
+we run 3615154110 --backend headless --frames 60 --screenshot preview.png
+```
+
+#### List Installed Wallpapers
+```bash
+we list
+```
+
+#### Diagnose Environment & Hardware
+```bash
+we doctor
+```
+Reports active display backends, detected monitors with refresh rates, GPU driver info, battery status, and Steam library paths.
+
+#### Inspect `.pkg` Files
+```bash
+we pkg ~/.local/share/Steam/steamapps/workshop/content/431960/3615154110/scene.pkg --list
+```
+
+---
+
+## Code Quality & Standards
+
+- **Modern C++23**: Semantics centered around RAII, `std::expected` for explicit failure propagation, and zero unhandled exceptions.
+- **Sanitizer Clean**: Verified with AddressSanitizer, UndefinedBehaviorSanitizer, and LeakSanitizer.
+- **Strict Linting & Formatting**: Follows `.clang-format` and strict `-Werror` compiler warnings.
+
+> [!NOTE]
+> The legacy C++17 implementation is kept under `src/WallpaperEngine/` and `src/Steam/` for historical reference and is no longer part of the build system.

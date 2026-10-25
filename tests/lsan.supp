@@ -13,4 +13,5 @@ leak:libnvidia-glsi
 leak:libnvidia-glcore
 leak:libGLX_nvidia
 leak:libEGL_nvidia
+leak:libcuda
 leak:libdbus-1

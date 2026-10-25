@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "we/core/error.hpp"
@@ -23,8 +24,47 @@ struct SceneCamera {
     bool automatic_projection = false;
 };
 
+struct EffectPassBind {
+    std::string name;
+    int index = 0;
+};
+
+struct EffectPassFbo {
+    std::string name;
+    int scale = 1;
+    std::string format = "rgba_backbuffer";
+};
+
+struct EffectPass {
+    std::string material;
+    std::string shader;
+    std::string target;
+    std::vector<EffectPassBind> binds;
+    std::unordered_map<std::string, int> combos;
+    std::unordered_map<std::string, std::string> constant_values;
+    std::vector<std::string> textures;
+    std::string blending = "normal";
+    bool compose = false;
+};
+
+struct SceneEffect {
+    int id = 0;
+    std::string file;
+    bool visible = true;
+    std::vector<EffectPassFbo> fbos;
+    std::vector<EffectPass> passes;
+};
+
+struct BloomSettings {
+    bool enabled = false;
+    float strength = 1.0F;
+    float threshold = 0.65F;
+    core::Vec3 tint { 1.0F, 1.0F, 1.0F };
+};
+
 struct SceneImage {
     int id = 0;
+    int order_index = 0;
     std::string name;
     core::Vec3 origin { 0.0F, 0.0F, 0.0F };
     core::Vec3 scale { 1.0F, 1.0F, 1.0F };
@@ -61,6 +101,9 @@ struct SceneImage {
     bool fullscreen = false;
     bool solid_layer = false;
     int effect_count = 0;
+    std::vector<SceneEffect> effects;
+    bool copy_background = false;
+    bool passthrough = false;
 };
 
 struct SceneLight {
@@ -75,13 +118,38 @@ struct SceneLight {
     float density = 1.0F;
 };
 
+struct ParticleInstanceOverride {
+    float rate = 1.0F;
+    float lifetime = 1.0F;
+    float size = 1.0F;
+    float speed = 1.0F;
+    float count = 1.0F;
+    float alpha = 1.0F;
+    core::Vec3 colorn { 1.0F, 1.0F, 1.0F };
+    core::Vec3 color { 1.0F, 1.0F, 1.0F };
+};
+
+struct SceneParticle {
+    int id = 0;
+    int order_index = 0;
+    std::string name;
+    std::string file;
+    core::Vec3 origin {};
+    core::Vec3 scale { 1.0F, 1.0F, 1.0F };
+    core::Vec3 angles {};
+    bool visible = true;
+    ParticleInstanceOverride instance_override;
+};
+
 struct Scene {
     std::string source;
     SceneCamera camera;
     core::Color clear_color { 0.0F, 0.0F, 0.0F, 1.0F };
     core::Vec3 ambient { 0.0F, 0.0F, 0.0F };
+    BloomSettings bloom;
     std::vector<SceneImage> images;
     std::vector<SceneLight> lights;
+    std::vector<SceneParticle> particles;
     int skipped_objects = 0;
 };
 

@@ -12,6 +12,14 @@
 
 namespace we::scene {
 
+struct TextureFrame {
+    float frametime = 0.0F;
+    float x = 0.0F;
+    float y = 0.0F;
+    float width = 0.0F;
+    float height = 0.0F;
+};
+
 struct TextureData {
     // Dimensions of the stored bitmap (TEX header "image" width/height).
     int width = 0;
@@ -26,6 +34,7 @@ struct TextureData {
     bool animated = false;
     int frame_count = 0;
     float duration = 0.0F;
+    std::vector<TextureFrame> frames;
     std::vector<std::uint8_t> rgba;
     // Set when the mipmap is an embedded MP4 stream instead of pixels.
     bool is_video = false;
@@ -41,7 +50,7 @@ struct TextureData {
 
 [[nodiscard]] std::expected<gfx::Texture, core::Error> upload_texture (const TextureData& texture);
 
-[[nodiscard]] std::expected<TextureData, core::Error> load_texture_data (const AssetContainer& assets,
-                                                                         std::string_view path);
+[[nodiscard]] std::expected<TextureData, core::Error>
+load_texture_data (const AssetContainer& assets, std::string_view path);
 
 } // namespace we::scene

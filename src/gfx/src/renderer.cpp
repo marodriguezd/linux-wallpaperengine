@@ -9,7 +9,7 @@
 namespace we::gfx {
 namespace {
 
-constexpr std::string_view vertex_source = R"(
+    constexpr std::string_view vertex_source = R"(
 #version 330 core
 layout(location = 0) in vec2 aPosition;
 layout(location = 1) in vec2 aTexCoord;
@@ -32,7 +32,7 @@ void main() {
 }
 )";
 
-constexpr std::string_view fragment_source = R"(
+    constexpr std::string_view fragment_source = R"(
 #version 330 core
 in vec2 vTexCoord;
 in vec4 vColor;
@@ -197,19 +197,19 @@ void main() {
 }
 )";
 
-void apply_blend (BlendMode mode) {
-    glEnable (GL_BLEND);
+    void apply_blend (BlendMode mode) {
+	glEnable (GL_BLEND);
 
-    switch (mode) {
-        case BlendMode::normal:
-        case BlendMode::translucent:
-            glBlendFuncSeparate (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-            break;
-        case BlendMode::additive:
-            glBlendFuncSeparate (GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE);
-            break;
+	switch (mode) {
+	    case BlendMode::normal:
+	    case BlendMode::translucent:
+		glBlendFuncSeparate (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+		break;
+	    case BlendMode::additive:
+		glBlendFuncSeparate (GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE);
+		break;
+	}
     }
-}
 
 } // namespace
 
@@ -223,8 +223,7 @@ Renderer::Renderer (Renderer&& other) noexcept :
     current_blend_ (other.current_blend_), light_positions_ (other.light_positions_),
     light_colors_ (other.light_colors_), light_count_ (other.light_count_), ambient_ (other.ambient_),
     projection_ (other.projection_), framebuffer_width_ (other.framebuffer_width_),
-    framebuffer_height_ (other.framebuffer_height_), draw_calls_ (other.draw_calls_),
-    in_frame_ (other.in_frame_) {
+    framebuffer_height_ (other.framebuffer_height_), draw_calls_ (other.draw_calls_), in_frame_ (other.in_frame_) {
     other.vao_ = 0;
     other.vbo_ = 0;
     other.reflection_width_ = 0;
@@ -235,33 +234,33 @@ Renderer::Renderer (Renderer&& other) noexcept :
 
 Renderer& Renderer::operator= (Renderer&& other) noexcept {
     if (this != &other) {
-        this->destroy ();
-        this->shader_ = std::move (other.shader_);
-        this->vao_ = other.vao_;
-        this->vbo_ = other.vbo_;
-        this->white_ = std::move (other.white_);
-        this->neutral_normal_ = std::move (other.neutral_normal_);
-        this->reflection_ = std::move (other.reflection_);
-        this->reflection_width_ = other.reflection_width_;
-        this->reflection_height_ = other.reflection_height_;
-        this->vertices_ = std::move (other.vertices_);
-        this->current_texture_ = other.current_texture_;
-        this->current_blend_ = other.current_blend_;
-        this->light_positions_ = other.light_positions_;
-        this->light_colors_ = other.light_colors_;
-        this->light_count_ = other.light_count_;
-        this->ambient_ = other.ambient_;
-        this->projection_ = other.projection_;
-        this->framebuffer_width_ = other.framebuffer_width_;
-        this->framebuffer_height_ = other.framebuffer_height_;
-        this->draw_calls_ = other.draw_calls_;
-        this->in_frame_ = other.in_frame_;
-        other.vao_ = 0;
-        other.vbo_ = 0;
-        other.reflection_width_ = 0;
-        other.reflection_height_ = 0;
-        other.current_texture_ = nullptr;
-        other.in_frame_ = false;
+	this->destroy ();
+	this->shader_ = std::move (other.shader_);
+	this->vao_ = other.vao_;
+	this->vbo_ = other.vbo_;
+	this->white_ = std::move (other.white_);
+	this->neutral_normal_ = std::move (other.neutral_normal_);
+	this->reflection_ = std::move (other.reflection_);
+	this->reflection_width_ = other.reflection_width_;
+	this->reflection_height_ = other.reflection_height_;
+	this->vertices_ = std::move (other.vertices_);
+	this->current_texture_ = other.current_texture_;
+	this->current_blend_ = other.current_blend_;
+	this->light_positions_ = other.light_positions_;
+	this->light_colors_ = other.light_colors_;
+	this->light_count_ = other.light_count_;
+	this->ambient_ = other.ambient_;
+	this->projection_ = other.projection_;
+	this->framebuffer_width_ = other.framebuffer_width_;
+	this->framebuffer_height_ = other.framebuffer_height_;
+	this->draw_calls_ = other.draw_calls_;
+	this->in_frame_ = other.in_frame_;
+	other.vao_ = 0;
+	other.vbo_ = 0;
+	other.reflection_width_ = 0;
+	other.reflection_height_ = 0;
+	other.current_texture_ = nullptr;
+	other.in_frame_ = false;
     }
 
     return *this;
@@ -269,34 +268,34 @@ Renderer& Renderer::operator= (Renderer&& other) noexcept {
 
 void Renderer::destroy () noexcept {
     if (this->vbo_ != 0) {
-        glDeleteBuffers (1, &this->vbo_);
-        this->vbo_ = 0;
+	glDeleteBuffers (1, &this->vbo_);
+	this->vbo_ = 0;
     }
 
     if (this->vao_ != 0) {
-        glDeleteVertexArrays (1, &this->vao_);
-        this->vao_ = 0;
+	glDeleteVertexArrays (1, &this->vao_);
+	this->vao_ = 0;
     }
 }
 
 std::expected<Renderer, core::Error> Renderer::create () {
     auto shader = Shader::build (vertex_source, fragment_source, "sprite renderer");
     if (!shader) {
-        return std::unexpected (std::move (shader.error ()));
+	return std::unexpected (std::move (shader.error ()));
     }
 
     const std::array<std::uint8_t, 4> white_pixel { 255, 255, 255, 255 };
     auto white = Texture::from_rgba8 (1, 1, white_pixel, TextureOptions { .mipmaps = false, .nearest = true });
     if (!white) {
-        return std::unexpected (std::move (white.error ()));
+	return std::unexpected (std::move (white.error ()));
     }
 
     // Flat tangent-space normal, used when a reflective material has no map.
     const std::array<std::uint8_t, 4> normal_pixel { 128, 128, 255, 255 };
-    auto neutral_normal = Texture::from_rgba8 (1, 1, normal_pixel,
-                                               TextureOptions { .mipmaps = false, .nearest = true });
+    auto neutral_normal
+	= Texture::from_rgba8 (1, 1, normal_pixel, TextureOptions { .mipmaps = false, .nearest = true });
     if (!neutral_normal) {
-        return std::unexpected (std::move (neutral_normal.error ()));
+	return std::unexpected (std::move (neutral_normal.error ()));
     }
 
     Renderer result;
@@ -323,7 +322,7 @@ std::expected<Renderer, core::Error> Renderer::create () {
     glBindBuffer (GL_ARRAY_BUFFER, 0);
 
     if (!check_gl ("Renderer::create")) {
-        return core::fail (core::ErrorCode::io, "OpenGL rejected the sprite renderer setup");
+	return core::fail (core::ErrorCode::io, "OpenGL rejected the sprite renderer setup");
     }
 
     return result;
@@ -360,15 +359,17 @@ void Renderer::begin (int framebuffer_width, int framebuffer_height, core::Color
     this->shader_.set_int ("uLit", 0);
     this->shader_.set_int ("uLightCount", 0);
     this->shader_.set_vec3 ("uLightAmbient", {});
-    this->shader_.set_vec2 ("uScreenSize", core::Vec2 { static_cast<float> (framebuffer_width),
-                                                       static_cast<float> (framebuffer_height) });
+    this->shader_.set_vec2 (
+	"uScreenSize", core::Vec2 { static_cast<float> (framebuffer_width), static_cast<float> (framebuffer_height) }
+    );
     const int max_dimension = std::max (framebuffer_width, framebuffer_height);
     this->shader_.set_float (
-        "uMipCount", std::floor (std::log2 (static_cast<float> (std::max (max_dimension, 1)))) + 1.0F
+	"uMipCount", std::floor (std::log2 (static_cast<float> (std::max (max_dimension, 1)))) + 1.0F
     );
 
-    this->projection_ = core::Mat4::ortho (0.0F, static_cast<float> (framebuffer_width),
-                                           static_cast<float> (framebuffer_height), 0.0F, -1.0F, 1.0F);
+    this->projection_ = core::Mat4::ortho (
+	0.0F, static_cast<float> (framebuffer_width), static_cast<float> (framebuffer_height), 0.0F, -1.0F, 1.0F
+    );
     this->shader_.set_mat4 ("uProjection", this->projection_);
 
     glBindVertexArray (this->vao_);
@@ -382,37 +383,40 @@ void Renderer::set_projection (const core::Mat4& projection) {
 
 void Renderer::prepare_draw (const Texture& texture, BlendMode blend) {
     if (this->current_texture_ != &texture || this->current_blend_ != blend) {
-        this->flush ();
-        this->current_texture_ = &texture;
-        this->current_blend_ = blend;
+	this->flush ();
+	this->current_texture_ = &texture;
+	this->current_blend_ = blend;
     }
 }
 
-void Renderer::draw (const Texture& texture, const core::Rect& destination, const core::Rect& uv,
-                     core::Color tint, BlendMode blend) {
+void Renderer::draw (
+    const Texture& texture, const core::Rect& destination, const core::Rect& uv, core::Color tint, BlendMode blend
+) {
     if (!this->in_frame_) {
-        return;
+	return;
     }
 
     this->prepare_draw (texture, blend);
     this->push_quad (destination, uv, tint);
 
     if (this->vertices_.size () >= 4096) {
-        this->flush ();
+	this->flush ();
     }
 }
 
-void Renderer::draw_quad (const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv,
-                          core::Color tint, BlendMode blend, float z) {
+void Renderer::draw_quad (
+    const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
+    BlendMode blend, float z
+) {
     if (!this->in_frame_) {
-        return;
+	return;
     }
 
     this->prepare_draw (texture, blend);
     this->push_quad (corners, uv, tint, z);
 
     if (this->vertices_.size () >= 4096) {
-        this->flush ();
+	this->flush ();
     }
 }
 
@@ -422,38 +426,45 @@ void Renderer::draw_rect (const core::Rect& destination, core::Color color, Blen
 
 void Renderer::capture_frame () {
     if (!this->in_frame_ || this->framebuffer_width_ <= 0 || this->framebuffer_height_ <= 0) {
-        return;
+	return;
     }
 
     this->flush ();
 
-    if (!this->reflection_.valid () || this->reflection_width_ != this->framebuffer_width_
-        || this->reflection_height_ != this->framebuffer_height_) {
-        const std::size_t size = static_cast<std::size_t> (this->framebuffer_width_)
-            * static_cast<std::size_t> (this->framebuffer_height_) * 4U;
-        const std::vector<std::uint8_t> blank (size, 0);
-        auto texture = Texture::from_rgba8 (this->framebuffer_width_, this->framebuffer_height_, blank);
+    GLint vp[4] = {};
+    glGetIntegerv (GL_VIEWPORT, vp);
+    const int width = vp[2] > 0 ? vp[2] : this->framebuffer_width_;
+    const int height = vp[3] > 0 ? vp[3] : this->framebuffer_height_;
 
-        if (!texture) {
-            core::log_warn ("cannot create the reflection buffer: ", texture.error ().message);
-            return;
-        }
+    if (!this->reflection_.valid () || this->reflection_width_ != width || this->reflection_height_ != height) {
+	const std::size_t size = static_cast<std::size_t> (width) * static_cast<std::size_t> (height) * 4U;
+	const std::vector<std::uint8_t> blank (size, 0);
+	auto texture = Texture::from_rgba8 (width, height, blank);
 
-        this->reflection_ = std::move (*texture);
-        this->reflection_width_ = this->framebuffer_width_;
-        this->reflection_height_ = this->framebuffer_height_;
+	if (!texture) {
+	    core::log_warn ("cannot create the reflection buffer: ", texture.error ().message);
+	    return;
+	}
+
+	this->reflection_ = std::move (*texture);
+	this->reflection_width_ = width;
+	this->reflection_height_ = height;
     }
 
-    glBindFramebuffer (GL_FRAMEBUFFER, 0);
+    GLint current_draw_fbo = 0;
+    glGetIntegerv (GL_DRAW_FRAMEBUFFER_BINDING, &current_draw_fbo);
+    glBindFramebuffer (GL_FRAMEBUFFER, current_draw_fbo);
     this->reflection_.bind (0);
-    glCopyTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, 0, 0, this->framebuffer_width_, this->framebuffer_height_);
+    glCopyTexSubImage2D (GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
     glGenerateMipmap (GL_TEXTURE_2D);
     glBindTexture (GL_TEXTURE_2D, 0);
+    glBindFramebuffer (GL_FRAMEBUFFER, current_draw_fbo);
 }
 
-void Renderer::draw_quad_reflective (const Texture& texture, const std::array<core::Vec2, 4>& corners,
-                                     const core::Rect& uv, core::Color tint, BlendMode blend,
-                                     const ReflectionOptions& options, float z) {
+void Renderer::draw_quad_reflective (
+    const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
+    BlendMode blend, const ReflectionOptions& options, float z
+) {
     this->draw_quad_material (texture, corners, uv, tint, blend, z, nullptr, &options);
 }
 
@@ -462,14 +473,12 @@ void Renderer::set_lighting (std::span<const PointLight> lights, core::Vec3 ambi
     this->ambient_ = ambient;
 
     for (int index = 0; index < this->light_count_; ++index) {
-        const PointLight& light = lights[static_cast<std::size_t> (index)];
-        this->light_positions_[static_cast<std::size_t> (index)] = core::Vec4 {
-            light.position.x, light.position.y, light.position.z, light.radius
-        };
-        this->light_colors_[static_cast<std::size_t> (index)] = core::Vec4 {
-            light.color.x * light.intensity, light.color.y * light.intensity,
-            light.color.z * light.intensity, light.exponent
-        };
+	const PointLight& light = lights[static_cast<std::size_t> (index)];
+	this->light_positions_[static_cast<std::size_t> (index)]
+	    = core::Vec4 { light.position.x, light.position.y, light.position.z, light.radius };
+	this->light_colors_[static_cast<std::size_t> (index)]
+	    = core::Vec4 { light.color.x * light.intensity, light.color.y * light.intensity,
+			   light.color.z * light.intensity, light.exponent };
     }
 
     this->shader_.use ();
@@ -479,19 +488,20 @@ void Renderer::set_lighting (std::span<const PointLight> lights, core::Vec3 ambi
     this->shader_.set_vec3 ("uLightAmbient", ambient);
 }
 
-void Renderer::draw_quad_material (const Texture& texture, const std::array<core::Vec2, 4>& corners,
-                                   const core::Rect& uv, core::Color tint, BlendMode blend, float z,
-                                   const LightingOptions* lighting, const ReflectionOptions* reflection) {
+void Renderer::draw_quad_material (
+    const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
+    BlendMode blend, float z, const LightingOptions* lighting, const ReflectionOptions* reflection
+) {
     if (!this->in_frame_) {
-        return;
+	return;
     }
 
     const bool lit = lighting != nullptr;
     const bool reflective = reflection != nullptr && this->reflection_.valid ();
 
     if (!lit && !reflective) {
-        this->draw_quad (texture, corners, uv, tint, blend, z);
-        return;
+	this->draw_quad (texture, corners, uv, tint, blend, z);
+	return;
     }
 
     this->flush ();
@@ -502,60 +512,60 @@ void Renderer::draw_quad_material (const Texture& texture, const std::array<core
     const Texture* normal_map = nullptr;
 
     if (lit) {
-        normal_map = lighting->normal_map;
-        this->shader_.set_float ("uLayerRoughness", lighting->roughness);
-        this->shader_.set_float ("uLayerMetallic", lighting->metallic);
-        this->shader_.set_vec3 ("uSpecularTint", lighting->specular_tint);
-        this->shader_.set_vec3 ("uEmissiveColor", lighting->emissive_color);
-        this->shader_.set_float ("uEmissiveBrightness", lighting->emissive_brightness);
-        this->shader_.set_int ("uMetallicMap", lighting->metallic_map ? 1 : 0);
-        this->shader_.set_int ("uRoughnessMap", lighting->roughness_map ? 1 : 0);
-        this->shader_.set_int ("uReflectionMap", lighting->reflection_map ? 1 : 0);
-        this->shader_.set_int ("uEmissiveMap", lighting->emissive_map ? 1 : 0);
-        this->shader_.set_vec2 ("uTangent", lighting->tangent);
-        this->shader_.set_vec2 ("uBitangent", lighting->bitangent);
+	normal_map = lighting->normal_map;
+	this->shader_.set_float ("uLayerRoughness", lighting->roughness);
+	this->shader_.set_float ("uLayerMetallic", lighting->metallic);
+	this->shader_.set_vec3 ("uSpecularTint", lighting->specular_tint);
+	this->shader_.set_vec3 ("uEmissiveColor", lighting->emissive_color);
+	this->shader_.set_float ("uEmissiveBrightness", lighting->emissive_brightness);
+	this->shader_.set_int ("uMetallicMap", lighting->metallic_map ? 1 : 0);
+	this->shader_.set_int ("uRoughnessMap", lighting->roughness_map ? 1 : 0);
+	this->shader_.set_int ("uReflectionMap", lighting->reflection_map ? 1 : 0);
+	this->shader_.set_int ("uEmissiveMap", lighting->emissive_map ? 1 : 0);
+	this->shader_.set_vec2 ("uTangent", lighting->tangent);
+	this->shader_.set_vec2 ("uBitangent", lighting->bitangent);
 
-        const bool has_mask = lighting->pbr_mask != nullptr && lighting->pbr_mask->valid ();
-        this->shader_.set_int ("uHasPbrMask", has_mask ? 1 : 0);
+	const bool has_mask = lighting->pbr_mask != nullptr && lighting->pbr_mask->valid ();
+	this->shader_.set_int ("uHasPbrMask", has_mask ? 1 : 0);
     } else {
-        normal_map = reflection->normal_map;
-        this->shader_.set_float ("uLayerRoughness", reflection->roughness);
-        this->shader_.set_float ("uLayerMetallic", reflection->metallic);
-        this->shader_.set_int ("uMetallicMap", reflection->metallic_map ? 1 : 0);
-        this->shader_.set_int ("uRoughnessMap", reflection->roughness_map ? 1 : 0);
-        this->shader_.set_int ("uReflectionMap", reflection->reflection_map ? 1 : 0);
-        this->shader_.set_int ("uEmissiveMap", 0);
-        this->shader_.set_vec2 ("uTangent", reflection->tangent);
-        this->shader_.set_vec2 ("uBitangent", reflection->bitangent);
+	normal_map = reflection->normal_map;
+	this->shader_.set_float ("uLayerRoughness", reflection->roughness);
+	this->shader_.set_float ("uLayerMetallic", reflection->metallic);
+	this->shader_.set_int ("uMetallicMap", reflection->metallic_map ? 1 : 0);
+	this->shader_.set_int ("uRoughnessMap", reflection->roughness_map ? 1 : 0);
+	this->shader_.set_int ("uReflectionMap", reflection->reflection_map ? 1 : 0);
+	this->shader_.set_int ("uEmissiveMap", 0);
+	this->shader_.set_vec2 ("uTangent", reflection->tangent);
+	this->shader_.set_vec2 ("uBitangent", reflection->bitangent);
 
-        const bool has_mask = reflection->pbr_mask != nullptr && reflection->pbr_mask->valid ();
-        this->shader_.set_int ("uHasPbrMask", has_mask ? 1 : 0);
+	const bool has_mask = reflection->pbr_mask != nullptr && reflection->pbr_mask->valid ();
+	this->shader_.set_int ("uHasPbrMask", has_mask ? 1 : 0);
     }
 
     if (reflective) {
-        this->shader_.set_float ("uReflectivity", reflection->reflectivity);
-        this->shader_.set_float ("uReflectivityDistance", reflection->reflectivity_distance);
+	this->shader_.set_float ("uReflectivity", reflection->reflectivity);
+	this->shader_.set_float ("uReflectivityDistance", reflection->reflectivity_distance);
     }
 
     const bool has_normal = normal_map != nullptr && normal_map->valid ();
     this->shader_.set_int ("uHasNormalMap", has_normal ? 1 : 0);
 
     if (has_normal) {
-        normal_map->bind (1);
+	normal_map->bind (1);
     } else {
-        this->neutral_normal_.bind (1);
+	this->neutral_normal_.bind (1);
     }
 
     if (reflective) {
-        this->reflection_.bind (2);
+	this->reflection_.bind (2);
     }
 
     const Texture* pbr_mask = lit ? lighting->pbr_mask : reflection->pbr_mask;
 
     if (pbr_mask != nullptr && pbr_mask->valid ()) {
-        pbr_mask->bind (3);
+	pbr_mask->bind (3);
     } else {
-        this->white_.bind (3);
+	this->white_.bind (3);
     }
 
     this->current_texture_ = &texture;
@@ -568,22 +578,21 @@ void Renderer::draw_quad_material (const Texture& texture, const std::array<core
 }
 
 void Renderer::push_quad (const core::Rect& destination, const core::Rect& uv, core::Color tint, float z) {
-    const std::array<core::Vec2, 4> corners = { core::Vec2 { destination.x, destination.y },
-                                                core::Vec2 { destination.right (), destination.y },
-                                                core::Vec2 { destination.right (), destination.bottom () },
-                                                core::Vec2 { destination.x, destination.bottom () } };
+    const std::array<core::Vec2, 4> corners
+	= { core::Vec2 { destination.x, destination.y }, core::Vec2 { destination.right (), destination.y },
+	    core::Vec2 { destination.right (), destination.bottom () },
+	    core::Vec2 { destination.x, destination.bottom () } };
     this->push_quad (corners, uv, tint, z);
 }
 
-void Renderer::push_quad (const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
-                          float z) {
+void Renderer::push_quad (const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint, float z) {
     const float u0 = uv.x;
     const float v0 = uv.y;
     const float u1 = uv.x + uv.width;
     const float v1 = uv.y + uv.height;
 
     const auto vertex = [&tint, z] (core::Vec2 position, float u, float v) {
-        return Vertex { position.x, position.y, z, u, v, tint.r, tint.g, tint.b, tint.a };
+	return Vertex { position.x, position.y, z, u, v, tint.r, tint.g, tint.b, tint.a };
     };
 
     const Vertex top_left = vertex (corners[0], u0, v0);
@@ -602,8 +611,8 @@ void Renderer::push_quad (const std::array<core::Vec2, 4>& corners, const core::
 
 void Renderer::flush () {
     if (this->vertices_.empty () || this->current_texture_ == nullptr) {
-        this->vertices_.clear ();
-        return;
+	this->vertices_.clear ();
+	return;
     }
 
     apply_blend (this->current_blend_);
@@ -611,8 +620,10 @@ void Renderer::flush () {
 
     glBindVertexArray (this->vao_);
     glBindBuffer (GL_ARRAY_BUFFER, this->vbo_);
-    glBufferData (GL_ARRAY_BUFFER, static_cast<GLsizeiptr> (this->vertices_.size () * sizeof (Vertex)),
-                  this->vertices_.data (), GL_STREAM_DRAW);
+    glBufferData (
+	GL_ARRAY_BUFFER, static_cast<GLsizeiptr> (this->vertices_.size () * sizeof (Vertex)), this->vertices_.data (),
+	GL_STREAM_DRAW
+    );
     glDrawArrays (GL_TRIANGLES, 0, static_cast<GLsizei> (this->vertices_.size ()));
     glBindBuffer (GL_ARRAY_BUFFER, 0);
 
@@ -622,7 +633,7 @@ void Renderer::flush () {
 
 void Renderer::end () {
     if (!this->in_frame_) {
-        return;
+	return;
     }
 
     this->flush ();

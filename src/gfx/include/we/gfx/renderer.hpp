@@ -88,14 +88,18 @@ public:
 
     // `uv` uses x/y as the top-left texture coordinate and width/height as the
     // coordinate span, so {0,0,1,1} samples the whole texture.
-    void draw (const Texture& texture, const core::Rect& destination, const core::Rect& uv,
-               core::Color tint = {}, BlendMode blend = BlendMode::normal);
+    void draw (
+	const Texture& texture, const core::Rect& destination, const core::Rect& uv, core::Color tint = {},
+	BlendMode blend = BlendMode::normal
+    );
 
     // Arbitrary quad, corners in clockwise order starting at the top-left.
     // Used for rotated scene layers. `z` is the scene-space height of the quad,
     // which only matters for lit materials.
-    void draw_quad (const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv,
-                    core::Color tint = {}, BlendMode blend = BlendMode::normal, float z = 0.0F);
+    void draw_quad (
+	const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint = {},
+	BlendMode blend = BlendMode::normal, float z = 0.0F
+    );
 
     // Copies what has been drawn so far into an internal mipmapped texture, so
     // the next reflective quads sample the frame behind them.
@@ -103,9 +107,10 @@ public:
 
     // Draws a quad with the REFLECTION term of genericimage4: the normal map
     // perturbs a screen-space lookup into the captured frame.
-    void draw_quad_reflective (const Texture& texture, const std::array<core::Vec2, 4>& corners,
-                               const core::Rect& uv, core::Color tint, BlendMode blend,
-                               const ReflectionOptions& options, float z = 0.0F);
+    void draw_quad_reflective (
+	const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
+	BlendMode blend, const ReflectionOptions& options, float z = 0.0F
+    );
 
     // Uploads the scene lights for the LIGHTING term. Call after begin().
     void set_lighting (std::span<const PointLight> lights, core::Vec3 ambient);
@@ -113,12 +118,14 @@ public:
     // Draws a genericimage4 material quad: LIGHTING when `lighting` is set,
     // REFLECTION when `reflection` is set (and a frame was captured). Both
     // terms share the normal map.
-    void draw_quad_material (const Texture& texture, const std::array<core::Vec2, 4>& corners,
-                             const core::Rect& uv, core::Color tint, BlendMode blend, float z,
-                             const LightingOptions* lighting, const ReflectionOptions* reflection);
+    void draw_quad_material (
+	const Texture& texture, const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
+	BlendMode blend, float z, const LightingOptions* lighting, const ReflectionOptions* reflection
+    );
 
     void draw_rect (const core::Rect& destination, core::Color color, BlendMode blend = BlendMode::normal);
 
+    void flush ();
     void end ();
 
     [[nodiscard]] int draw_calls () const noexcept { return this->draw_calls_; }
@@ -126,22 +133,20 @@ public:
 
 private:
     struct Vertex {
-        float x;
-        float y;
-        float z;
-        float u;
-        float v;
-        float r;
-        float g;
-        float b;
-        float a;
+	float x;
+	float y;
+	float z;
+	float u;
+	float v;
+	float r;
+	float g;
+	float b;
+	float a;
     };
 
     void push_quad (const core::Rect& destination, const core::Rect& uv, core::Color tint, float z = 0.0F);
-    void push_quad (const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint,
-                    float z = 0.0F);
+    void push_quad (const std::array<core::Vec2, 4>& corners, const core::Rect& uv, core::Color tint, float z = 0.0F);
     void prepare_draw (const Texture& texture, BlendMode blend);
-    void flush ();
     void destroy () noexcept;
 
     Shader shader_;
