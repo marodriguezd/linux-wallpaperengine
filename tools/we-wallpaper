@@ -41,6 +41,24 @@ CURSOR_ENV=()
 # despertar la dGPU (D3cold). Sin esto mpv elige nvdec y la RTX 3050 queda
 # en 'active' ~8W solo por el fondo.
 INTEL_ENV=(CUDA_VISIBLE_DEVICES="" NVIDIA_VISIBLE_DEVICES=void __GLX_VENDOR_LIBRARY_NAME=mesa DRI_PRIME=pci-0000_00_02_0 "VK_LOADER_DRIVERS_SELECT=*intel*" LIBVA_DRIVER_NAME=iHD)
+WE_GPU="${WE_GPU:-}"
+WE_TOOLKIT_THEME="${WE_TOOLKIT_THEME:-}"
+
+gpu_env() {
+    case "${WE_GPU:-auto}" in
+	intel)
+	    printf '%s\n' "${INTEL_ENV[@]}"
+	    ;;
+	nvidia)
+	    # GPU dedicada: se limpian las restricciones Intel para que use la dGPU
+	    printf '%s\n' "__NV_PRIME_RENDER_OFFLOAD=1" "__GLX_VENDOR_LIBRARY_NAME=nvidia"
+	    ;;
+	auto|*)
+	    # En auto se aplica el ahorro Intel iGPU para no despertar la dGPU
+	    printf '%s\n' "${INTEL_ENV[@]}"
+	    ;;
+    esac
+}
 STATE_DIR="$HOME/.config/we-wallpaper"
 STATE_FILE="$STATE_DIR/state.conf"
 # Fase Power: perfil de energía persistido. El fichero solo rellena las
@@ -67,13 +85,15 @@ power_defaults() {
     echo "WE_NO_FULLSCREEN_PAUSE=${WE_NO_FULLSCREEN_PAUSE:-0}"
     echo "WE_HWDEC=${WE_HWDEC:-auto}"
     echo "WE_MULTIMONITOR=${WE_MULTIMONITOR:-clone}"
+    echo "WE_TOOLKIT_THEME=${WE_TOOLKIT_THEME:-auto}"
+    echo "WE_GPU=${WE_GPU:-auto}"
 }
 load_power_conf() {
     [ -f "$POWER_CONF" ] || return 0
     local k v
     while IFS='=' read -r k v; do
 	case "$k" in
-	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC|WE_MULTIMONITOR)
+	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC|WE_MULTIMONITOR|WE_TOOLKIT_THEME|WE_GPU)
 		# solo si el entorno no la trae puesta
 		eval "[ -n \"\${$k:-}\" ] || $k=\"\$v\""
 		;;
@@ -120,6 +140,8 @@ WE_PROFILE=${WE_PROFILE:-}
 WE_FPS_BATTERY=${WE_FPS_BATTERY:-}
 WE_PAUSE_ON_BATTERY=${WE_PAUSE_ON_BATTERY:-}
 PLAYLIST_FILE=${PLAYLIST_FILE:-}
+WE_TOOLKIT_THEME=${WE_TOOLKIT_THEME:-auto}
+WE_GPU=${WE_GPU:-auto}
 EOF
 }
 
@@ -127,7 +149,7 @@ load_state() {
     if [ -f "$STATE_FILE" ]; then
 	# shellcheck disable=SC1090
 	source "$STATE_FILE"
-	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}|${WE_PAUSE_ON_BATTERY:-}|${PLAYLIST_FILE:-}"
+	echo "${WALLPAPER_ID:-}|${MODE:-normal}|${SCREEN:-}|${APPLY_TYPE:-single}|${BACKEND:-}|${WE_PROFILE:-}|${WE_FPS_BATTERY:-}|${WE_PAUSE_ON_BATTERY:-}|${PLAYLIST_FILE:-}|${WE_TOOLKIT_THEME:-auto}|${WE_GPU:-auto}"
     fi
 }
 
@@ -307,10 +329,15 @@ apply_wallpaper() {
     # overrides por wallpaper (props/<id>.conf), solo modo fondo fijo
     load_saved_props "$wallpaper_id" flags
 
+    local gpu_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && gpu_args+=("$arg")
+    done < <(gpu_env)
+
     # Lanzamiento desacoplado (setsid+disown, como dwm-wallpaper-animated):
     # sobrevive al cierre del terminal y a limpiezas de grupo de procesos.
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
 	--screen-root "$screen" \
 	--bg "$wallpaper_id" \
 	"${fork_args[@]}" \
@@ -361,10 +388,15 @@ apply_all() {
     # overrides por wallpaper (props/<id>.conf), solo modo fondo fijo
     load_saved_props "$wallpaper_id" flags
 
+    local gpu_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && gpu_args+=("$arg")
+    done < <(gpu_env)
+
     # Con nuestro fork, --screen-all cubre todas las pantallas detectadas
     # y comparte la misma instancia CWallpaper para decodificar 1 sola vez
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
 	--screen-all \
 	--bg "$wallpaper_id" \
 	"${fork_args[@]}" \
@@ -408,6 +440,11 @@ playlist_play() {
     # primer item para theming y estado
     local first=$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$file" | head -n 1 | tr -d ' \t\r')
 
+    local gpu_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && gpu_args+=("$arg")
+    done < <(gpu_env)
+
     if [ "$target" = "all" ]; then
 	local screen_args=() first_screen=""
 	while IFS= read -r screen; do
@@ -417,7 +454,7 @@ playlist_play() {
 	done < <(get_all_screens)
 	[ ${#screen_args[@]} -eq 0 ] && { echo "Error: no se detectó ningún monitor"; return 1; }
 	# shellcheck disable=SC2086
-	env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
+	env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
 	    "${screen_args[@]}" \
 	    "${fork_args[@]}" \
 	    "${flags[@]}" \
@@ -427,7 +464,7 @@ playlist_play() {
 	PLAYLIST_FILE="$file" save_state "playlist" "playlist" "$first_screen" "playlist-all"
     else
 	# shellcheck disable=SC2086
-	env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
+	env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
 	    --screen-root "$target" --playlist-file "$file" \
 	    "${fork_args[@]}" \
 	    "${flags[@]}" \
@@ -523,7 +560,7 @@ restore_wallpaper() {
     wait_for_backend || return 1
     sleep 2
 
-    local id mode screen apply_type saved_profile saved_fps
+    local id mode screen apply_type saved_profile saved_fps saved_pob saved_pl saved_toolkit saved_gpu
     id=$(echo "$state" | cut -d'|' -f1)
     mode=$(echo "$state" | cut -d'|' -f2)
     screen=$(echo "$state" | cut -d'|' -f3)
@@ -532,12 +569,16 @@ restore_wallpaper() {
     saved_fps=$(echo "$state" | cut -d'|' -f7)
     saved_pob=$(echo "$state" | cut -d'|' -f8)
     saved_pl=$(echo "$state" | cut -d'|' -f9)
+    saved_toolkit=$(echo "$state" | cut -d'|' -f10)
+    saved_gpu=$(echo "$state" | cut -d'|' -f11)
 
     # respeta lo guardado salvo override por entorno actual
     [ -z "${WE_PROFILE:-}" ] && WE_PROFILE="$saved_profile"
     [ -z "${WE_FPS_BATTERY:-}" ] && WE_FPS_BATTERY="$saved_fps"
     [ -z "${WE_PAUSE_ON_BATTERY:-}" ] && WE_PAUSE_ON_BATTERY="$saved_pob"
-    export WE_PROFILE WE_FPS_BATTERY WE_PAUSE_ON_BATTERY
+    [ -z "${WE_TOOLKIT_THEME:-}" ] && WE_TOOLKIT_THEME="$saved_toolkit"
+    [ -z "${WE_GPU:-}" ] && WE_GPU="$saved_gpu"
+    export WE_PROFILE WE_FPS_BATTERY WE_PAUSE_ON_BATTERY WE_TOOLKIT_THEME WE_GPU
 
     # playlists guardadas se restauran como playlist, no como fondo fijo
     if [ -n "$saved_pl" ] && [ -f "$saved_pl" ]; then
@@ -664,7 +705,12 @@ restore_screens() {
 	return 1
     fi
 
-    env "${CURSOR_ENV[@]}" "${INTEL_ENV[@]}" setsid nohup $ENGINE \
+    local gpu_args=()
+    while IFS= read -r arg; do
+	[ -n "$arg" ] && gpu_args+=("$arg")
+    done < <(gpu_env)
+
+    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
 	"${screen_args[@]}" \
 	"${fork_args[@]}" \
 	"${flags[@]}" \
@@ -927,6 +973,8 @@ power_set() {
     local cur_active="${WE_PAUSE_ACTIVE_ONLY:-0}" cur_ignore="$WE_PAUSE_IGNORE_APPID"
     local cur_nofs="${WE_NO_FULLSCREEN_PAUSE:-0}" cur_hwdec="${WE_HWDEC:-auto}"
     local cur_multimonitor="${WE_MULTIMONITOR:-clone}"
+    local cur_theme="${WE_TOOLKIT_THEME:-auto}"
+    local cur_gpu="${WE_GPU:-auto}"
     for kv in "$@"; do
 	k="${kv%%=*}"; v="${kv#*=}"
 	[ "$k" != "$kv" ] || { echo "Ignorada (sin =): $kv"; ok=0; continue; }
@@ -1010,6 +1058,18 @@ power_set() {
 		    *) echo "WE_MULTIMONITOR inválido: $v (clone|single|independent)"; ok=0 ;;
 		esac
 		;;
+	    WE_TOOLKIT_THEME)
+		case "$v" in
+		    auto|gtk|qt|brave) cur_theme="$v" ;;
+		    *) echo "WE_TOOLKIT_THEME inválido: $v (auto|gtk|qt|brave)"; ok=0 ;;
+		esac
+		;;
+	    WE_GPU)
+		case "$v" in
+		    auto|intel|nvidia) cur_gpu="$v" ;;
+		    *) echo "WE_GPU inválido: $v (auto|intel|nvidia)"; ok=0 ;;
+		esac
+		;;
 	    *)
 		echo "Clave desconocida: $k"; ok=0
 		;;
@@ -1029,7 +1089,11 @@ WE_PAUSE_IGNORE_APPID=$cur_ignore
 WE_NO_FULLSCREEN_PAUSE=$cur_nofs
 WE_HWDEC=$cur_hwdec
 WE_MULTIMONITOR=$cur_multimonitor
+WE_TOOLKIT_THEME=$cur_theme
+WE_GPU=$cur_gpu
 EOF
+    WE_TOOLKIT_THEME="$cur_theme"
+    WE_GPU="$cur_gpu"
     echo "power: guardado en $POWER_CONF (aplica al próximo apply/restore)"
 }
 
@@ -1864,6 +1928,40 @@ fetch_url() {
     esac
 }
 
+gpu_cmd() {
+    if [ -n "${1:-}" ]; then
+	case "$1" in
+	    intel|nvidia|auto)
+		power_set "WE_GPU=$1"
+		echo "GPU fijada a: $1"
+		;;
+	    *)
+		echo "Modos válidos para GPU: intel, nvidia, auto"
+		return 1
+		;;
+	esac
+    else
+	echo "GPU actual: ${WE_GPU:-auto}"
+    fi
+}
+
+toolkit_cmd() {
+    if [ -n "${1:-}" ]; then
+	case "$1" in
+	    auto|gtk|qt|brave)
+		power_set "WE_TOOLKIT_THEME=$1"
+		echo "Toolkit theme fijado a: $1"
+		;;
+	    *)
+		echo "Temas válidos: auto, gtk, qt, brave"
+		return 1
+		;;
+	esac
+    else
+	echo "Toolkit theme actual: ${WE_TOOLKIT_THEME:-auto}"
+    fi
+}
+
 usage() {
     local fps=$(get_refresh_rate)
     echo "Uso: we-wallpaper <comando> [args...]  [backend: $(detect_backend)]"
@@ -1896,6 +1994,8 @@ usage() {
     echo "  status                                Ver estado"
     echo "  power                                 Ver perfil de energía (K=V)"
     echo "  power-set CLAVE=VALOR ...             Guardar perfil de energía"
+    echo "  gpu [intel|nvidia|auto]               Ver o fijar GPU (intel=ahorro, nvidia=rendimiento)"
+    echo "  toolkit [auto|gtk|qt|brave]           Ver o fijar tema de toolkit visual"
     echo "  backend                               Detectar backend (sway|x11|unknown)"
     echo "  version                               Mostrar versión del fork y engine"
     echo ""
@@ -1994,6 +2094,8 @@ EOF
     current-id) current_id ;;
     power)      power_show ;;
     power-set)  shift; power_set "$@" ;;
+    gpu)        gpu_cmd "$2" ;;
+    toolkit)    toolkit_cmd "$2" ;;
     backend)    detect_backend ;;
     *)          usage ;;
 esac

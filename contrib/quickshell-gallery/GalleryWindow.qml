@@ -11,11 +11,86 @@ FloatingWindow {
 
     required property var galleryModel
 
-    title: "wallpaper gallery"
+    title: "linux-wallpaperengine"
     visible: galleryModel.visible
     implicitWidth: 880
     implicitHeight: 640
     color: Theme.transparent
+
+    // Deliberate design tokens dynamically derived from galleryModel.toolkitTheme
+    readonly property color colCanvas: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#1e1e1e";
+        case "qt": return "#232629";
+        case "brave": return "#0d1117";
+        default: return (Theme.bg ? Theme.bg : "#2E3440");
+        }
+    }
+    readonly property color colSurface: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#242424";
+        case "qt": return "#31363b";
+        case "brave": return "#161c24";
+        default: return (Theme.surface ? Theme.surface : "#434C5E");
+        }
+    }
+    readonly property color colSurfaceHover: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#2e2e2e";
+        case "qt": return "#3a4046";
+        case "brave": return "#1c2430";
+        default: return (Theme.surfaceHover ? Theme.surfaceHover : "#4C566A");
+        }
+    }
+    readonly property color colBorderSubtle: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#303030";
+        case "qt": return "#43494f";
+        case "brave": return "#232d3b";
+        default: return (Theme.border ? Theme.border : "#3B4252");
+        }
+    }
+    readonly property color colTextPrimary: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#ffffff";
+        case "qt": return "#eff0f1";
+        case "brave": return "#e6edf3";
+        default: return (Theme.textStrong ? Theme.textStrong : (Theme.text ? Theme.text : "#ECEFF4"));
+        }
+    }
+    readonly property color colTextMuted: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#9a9996";
+        case "qt": return "#bdc3c7";
+        case "brave": return "#8b9bb0";
+        default: return (Theme.textMuted ? Theme.textMuted : "#D8DEE9");
+        }
+    }
+    readonly property color colAccentCyan: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#3584e4";
+        case "qt": return "#3daee9";
+        case "brave": return "#fb542b";
+        default: return (Theme.accent ? Theme.accent : "#81A1C1");
+        }
+    }
+    readonly property color colAccent: root.colAccentCyan
+    readonly property color colAccentAmber: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return "#f5c211";
+        case "qt": return "#f67400";
+        case "brave": return "#f59e0b";
+        default: return (Theme.warning ? Theme.warning : "#EBCB8B");
+        }
+    }
+    readonly property int cardRadius: {
+        switch (root.galleryModel.toolkitTheme) {
+        case "gtk": return 10;
+        case "qt": return 5;
+        case "brave": return 8;
+        default: return (Theme.controlRadius !== undefined && Theme.controlRadius > 0) ? Theme.controlRadius : 6;
+        }
+    }
 
     function focusSearch() {
         gallerySearch.forceActiveFocus();
@@ -30,6 +105,10 @@ FloatingWindow {
 
     ShellSurface {
         anchors.fill: parent
+        color: root.colCanvas
+        border.color: root.colBorderSubtle
+        border.width: 1
+        radius: root.cardRadius
 
         ColumnLayout {
             anchors.fill: parent
@@ -38,34 +117,34 @@ FloatingWindow {
 
             LargeSurfaceHeader {
                 Layout.fillWidth: true
-                eyebrow: "Fork catalog"
-                title: "Wallpapers"
+                eyebrow: ""
+                title: "Catálogo de fondos"
                 subtitle: {
                     if (root.galleryModel.mode === "explore") {
                         switch (root.galleryModel.exploreSource) {
                         case "bing":
-                            return "Bing · dailies 4K + archivo";
+                            return "Fondos diarios en 4K y archivo histórico de Bing";
                         case "wallhaven":
-                            return "Wallhaven · top UHD sin key";
+                            return "Fondos destacados en ultra alta definición de Wallhaven";
                         case "motionbgs":
-                            return "MotionBGS · vídeos HD/4K";
+                            return "Vídeos animados y escenas en alta resolución de MotionBGS";
                         default:
-                            return "Minimalista · flat art";
+                            return "Ilustraciones minimalistas y arte plano";
                         }
                     }
-                    return "Type to filter / Enter applies first / Esc closes";
+                    return "Escribe para filtrar, Enter para aplicar el primero o Esc para cerrar";
                 }
                 status: root.galleryModel.status
-                statusColor: Theme.accent
+                statusColor: root.colAccentCyan
             }
 
             Rectangle {
                 Layout.fillWidth: true
-                Layout.preferredHeight: Theme.largeSurfaceSearchHeight
-                color: gallerySearch.activeFocus ? Theme.controlFocusFill : Theme.controlNormalFill
-                border.color: gallerySearch.activeFocus ? Theme.controlFocusBorder : Theme.controlNormalBorder
-                border.width: gallerySearch.activeFocus ? Theme.controlFocusBorderWidth : Theme.controlBorderWidth
-                radius: Theme.largeSurfaceCardRadius
+                Layout.preferredHeight: Theme.largeSurfaceSearchHeight > 0 ? Theme.largeSurfaceSearchHeight : 38
+                color: gallerySearch.activeFocus ? root.colSurfaceHover : root.colSurface
+                border.color: gallerySearch.activeFocus ? root.colAccentCyan : root.colBorderSubtle
+                border.width: gallerySearch.activeFocus ? 2 : 1
+                radius: Math.max(3, root.cardRadius - 2)
 
                 TextInput {
                     id: gallerySearch
@@ -74,9 +153,9 @@ FloatingWindow {
                     anchors.leftMargin: 14
                     anchors.rightMargin: 14
                     verticalAlignment: TextInput.AlignVCenter
-                    color: Theme.controlFocusText
-                    selectionColor: Theme.accent
-                    selectedTextColor: Theme.accentText
+                    color: root.colTextPrimary
+                    selectionColor: root.colAccentCyan
+                    selectedTextColor: root.colCanvas
                     text: root.galleryModel.mode === "explore" ? root.galleryModel.exploreFilter : root.galleryModel.query
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.inputFontSize
@@ -115,8 +194,8 @@ FloatingWindow {
                     anchors.leftMargin: 14
                     anchors.verticalCenter: parent.verticalCenter
                     visible: gallerySearch.text.length === 0
-                    text: "Search wallpapers"
-                    color: Theme.placeholder
+                    text: root.galleryModel.mode === "explore" ? "Buscar fondos en el catálogo en línea..." : "Buscar fondos por título, autor o temática..."
+                    color: root.colTextMuted
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.inputFontSize
                 }
@@ -127,13 +206,13 @@ FloatingWindow {
                 spacing: 8
 
                 ShellButton {
-                    label: "Local"
+                    label: "Biblioteca local"
                     primary: root.galleryModel.mode === "local"
                     onActivated: root.galleryModel.setMode("local")
                 }
 
                 ShellButton {
-                    label: "Explorar"
+                    label: "Explorar en línea"
                     primary: root.galleryModel.mode === "explore"
                     onActivated: {
                         root.galleryModel.setMode("explore");
@@ -143,11 +222,11 @@ FloatingWindow {
 
                 Repeater {
                     model: [
-                        { id: "bing", label: "bing" },
-                        { id: "wallhaven", label: "wallhaven" },
-                        { id: "motionbgs", label: "motion" },
-                        { id: "desktophut", label: "desktophut" },
-                        { id: "minimal", label: "minimal" }
+                        { id: "bing", label: "Bing" },
+                        { id: "wallhaven", label: "Wallhaven" },
+                        { id: "motionbgs", label: "MotionBGS" },
+                        { id: "desktophut", label: "DesktopHut" },
+                        { id: "minimal", label: "Minimal" }
                     ]
 
                     delegate: ShellButton {
@@ -174,7 +253,7 @@ FloatingWindow {
 
                 Repeater {
                     model: [
-                        { id: "", label: "Todo" },
+                        { id: "", label: "Todos" },
                         { id: "video", label: "Vídeo" },
                         { id: "image", label: "Imagen" }
                     ]
@@ -195,13 +274,13 @@ FloatingWindow {
                 }
 
                 ShellButton {
-                    label: root.galleryModel.sortOrder === "" ? "Ordenar" : (root.galleryModel.sortOrder === "az" ? "A-Z" : "Z-A")
+                    label: root.galleryModel.sortOrder === "" ? "Ordenar" : (root.galleryModel.sortOrder === "az" ? "Nombre A-Z" : "Nombre Z-A")
                     primary: root.galleryModel.sortOrder !== ""
                     onActivated: root.galleryModel.toggleSort()
                 }
 
                 ShellButton {
-                    label: "Power"
+                    label: root.galleryModel.showPower ? "Ocultar energía" : "Perfil de energía"
                     primary: root.galleryModel.showPower
                     onActivated: root.galleryModel.showPower = !root.galleryModel.showPower
                 }
@@ -213,7 +292,8 @@ FloatingWindow {
                 visible: root.galleryModel.mode === "local" && root.galleryModel.activeCategories().length > 0
 
                 UiText {
-                    text: "mood:"
+                    text: "Temática:"
+                    color: root.colTextMuted
                 }
 
                 Repeater {
@@ -232,8 +312,10 @@ FloatingWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: powerCol.implicitHeight + 20
                 visible: root.galleryModel.mode === "local" && root.galleryModel.powerLoaded && root.galleryModel.showPower
-                color: Theme.controlNormalFill
-                radius: 8
+                color: root.colSurface
+                border.color: root.colBorderSubtle
+                border.width: 1
+                radius: root.cardRadius
 
                 ColumnLayout {
                     id: powerCol
@@ -247,9 +329,17 @@ FloatingWindow {
                         Layout.fillWidth: true
                         spacing: 8
 
+                        Rectangle {
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: root.colAccentAmber
+                        }
+
                         UiText {
-                            text: "Power"
+                            text: "Perfil de energía y rendimiento"
                             font.bold: true
+                            color: root.colTextPrimary
                         }
 
                         Item {
@@ -257,7 +347,7 @@ FloatingWindow {
                         }
 
                         ShellButton {
-                            label: "Apply"
+                            label: "Aplicar cambios"
                             primary: true
                             onActivated: root.galleryModel.applyPower()
                         }
@@ -268,15 +358,16 @@ FloatingWindow {
                         spacing: 8
 
                         UiText {
-                            Layout.preferredWidth: 110
-                            text: "Perfil"
+                            Layout.preferredWidth: 120
+                            text: "Perfil activo"
+                            color: root.colTextMuted
                         }
 
                         Repeater {
                             model: [
-                                { id: "lite", label: "Lite" },
-                                { id: "balanced", label: "Balanced" },
-                                { id: "full", label: "Full" }
+                                { id: "lite", label: "Bajo consumo" },
+                                { id: "balanced", label: "Equilibrado" },
+                                { id: "full", label: "Rendimiento" }
                             ]
 
                             delegate: ShellButton {
@@ -293,8 +384,9 @@ FloatingWindow {
                         spacing: 8
 
                         UiText {
-                            Layout.preferredWidth: 110
-                            text: "Enchufado (FPS)"
+                            Layout.preferredWidth: 120
+                            text: "Alimentación CA"
+                            color: root.colTextMuted
                         }
 
                         ShellButton {
@@ -303,8 +395,10 @@ FloatingWindow {
                         }
 
                         UiText {
-                            Layout.preferredWidth: 52
+                            Layout.preferredWidth: 54
                             text: root.galleryModel.acFpsLabel()
+                            color: root.colTextPrimary
+                            font.bold: true
                         }
 
                         ShellButton {
@@ -313,8 +407,9 @@ FloatingWindow {
                         }
 
                         UiText {
-                            Layout.preferredWidth: 110
-                            text: "Batería (FPS)"
+                            Layout.preferredWidth: 90
+                            text: "Batería"
+                            color: root.colAccentAmber
                         }
 
                         ShellButton {
@@ -323,8 +418,10 @@ FloatingWindow {
                         }
 
                         UiText {
-                            Layout.preferredWidth: 40
-                            text: String(root.galleryModel.powerBattFps)
+                            Layout.preferredWidth: 44
+                            text: String(root.galleryModel.powerBattFps) + " fps"
+                            color: root.colAccentAmber
+                            font.bold: true
                         }
 
                         ShellButton {
@@ -338,13 +435,14 @@ FloatingWindow {
                         spacing: 8
 
                         ShellButton {
-                            label: "Pausar en batería"
+                            label: root.galleryModel.powerPauseOnBatt ? "Pausar en batería: Sí" : "Pausar en batería: No"
                             primary: root.galleryModel.powerPauseOnBatt
                             onActivated: root.galleryModel.powerPauseOnBatt = !root.galleryModel.powerPauseOnBatt
                         }
 
                         UiText {
-                            text: "Sin input (X11)"
+                            text: "Inactividad X11:"
+                            color: root.colTextMuted
                         }
 
                         ShellButton {
@@ -355,6 +453,7 @@ FloatingWindow {
                         UiText {
                             Layout.preferredWidth: 64
                             text: root.galleryModel.idleMinLabel()
+                            color: root.colTextPrimary
                         }
 
                         ShellButton {
@@ -365,8 +464,8 @@ FloatingWindow {
 
                     UiText {
                         Layout.fillWidth: true
-                        color: Theme.menuMutedText
-                        text: "Apply guarda y reaplica el fondo actual. Un export en el entorno gana al fichero."
+                        color: root.colTextMuted
+                        text: "Aplica y guarda los límites de tasa de cuadros y ahorro de energía. Las variables de entorno tienen prioridad."
                     }
                 }
             }
@@ -375,8 +474,10 @@ FloatingWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: backendCol.implicitHeight + 20
                 visible: root.galleryModel.mode === "local" && root.galleryModel.powerLoaded && root.galleryModel.showPower
-                color: Theme.controlNormalFill
-                radius: 8
+                color: root.colSurface
+                border.color: root.colBorderSubtle
+                border.width: 1
+                radius: root.cardRadius
 
                 ColumnLayout {
                     id: backendCol
@@ -391,13 +492,14 @@ FloatingWindow {
                         spacing: 8
 
                         UiText {
-                            text: "Backend"
+                            text: "Servidor gráfico y aceleración"
                             font.bold: true
+                            color: root.colTextPrimary
                         }
 
                         UiText {
-                            color: Theme.menuMutedText
-                            text: "detectado: " + (root.galleryModel.backendDetected || "?")
+                            color: root.colTextMuted
+                            text: "detectado: " + (root.galleryModel.backendDetected || "desconocido")
                         }
 
                         Item {
@@ -405,7 +507,7 @@ FloatingWindow {
                         }
 
                         ShellButton {
-                            label: "Apply"
+                            label: "Aplicar ajustes"
                             primary: true
                             onActivated: root.galleryModel.applyPower()
                         }
@@ -416,8 +518,62 @@ FloatingWindow {
                         spacing: 8
 
                         UiText {
-                            Layout.preferredWidth: 110
-                            text: "Forzar"
+                            Layout.preferredWidth: 120
+                            text: "Tema de toolkit"
+                            color: root.colTextMuted
+                        }
+
+                        Repeater {
+                            model: [
+                                { id: "auto", label: "Auto / Sistema" },
+                                { id: "gtk", label: "GTK / Libadwaita" },
+                                { id: "qt", label: "Qt / Breeze" },
+                                { id: "brave", label: "Brave / Obsidian" }
+                            ]
+
+                            delegate: ShellButton {
+                                required property var modelData
+                                label: modelData.label
+                                primary: root.galleryModel.toolkitTheme === modelData.id
+                                onActivated: root.galleryModel.toolkitTheme = modelData.id
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            Layout.preferredWidth: 120
+                            text: "Aceleración GPU"
+                            color: root.colTextMuted
+                        }
+
+                        Repeater {
+                            model: [
+                                { id: "intel", label: "Intel iGPU (Batería)" },
+                                { id: "nvidia", label: "dGPU Rendimiento" },
+                                { id: "auto", label: "Auto" }
+                            ]
+
+                            delegate: ShellButton {
+                                required property var modelData
+                                label: modelData.label
+                                primary: root.galleryModel.gpuTarget === modelData.id
+                                onActivated: root.galleryModel.gpuTarget = modelData.id
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UiText {
+                            Layout.preferredWidth: 120
+                            text: "Forzar servidor"
+                            color: root.colTextMuted
                         }
 
                         ShellButton {
@@ -427,8 +583,8 @@ FloatingWindow {
                         }
 
                         UiText {
-                            color: Theme.menuMutedText
-                            text: "efectivo: " + (root.galleryModel.effBackend() || "?")
+                            color: root.colTextMuted
+                            text: "efectivo: " + (root.galleryModel.effBackend() || "desconocido")
                         }
                     }
 
@@ -437,14 +593,21 @@ FloatingWindow {
                         spacing: 8
                         visible: root.galleryModel.effBackend() !== "sway"
 
+                        UiText {
+                            Layout.preferredWidth: 120
+                            text: "Modo X11"
+                            color: root.colTextMuted
+                        }
+
                         ShellButton {
-                            label: "Pausar en fullscreen"
+                            label: root.galleryModel.powerFullscreenPause ? "Pausa en pantalla completa: Sí" : "Pausa en pantalla completa: No"
                             primary: root.galleryModel.powerFullscreenPause
                             onActivated: root.galleryModel.powerFullscreenPause = !root.galleryModel.powerFullscreenPause
                         }
 
                         UiText {
-                            text: "Decode"
+                            text: "Decodificación:"
+                            color: root.colTextMuted
                         }
 
                         ShellButton {
@@ -455,6 +618,7 @@ FloatingWindow {
                         UiText {
                             Layout.preferredWidth: 92
                             text: root.galleryModel.powerHwdec
+                            color: root.colTextPrimary
                         }
 
                         ShellButton {
@@ -469,8 +633,9 @@ FloatingWindow {
                         visible: root.galleryModel.effBackend() === "sway"
 
                         UiText {
-                            Layout.preferredWidth: 110
-                            text: "Capa"
+                            Layout.preferredWidth: 120
+                            text: "Capa Wayland"
+                            color: root.colTextMuted
                         }
 
                         Repeater {
@@ -491,30 +656,31 @@ FloatingWindow {
                         visible: root.galleryModel.effBackend() === "sway"
 
                         ShellButton {
-                            label: "Pausa solo si activa"
+                            label: "Pausar solo ventana activa"
                             primary: root.galleryModel.powerPauseActiveOnly
                             onActivated: root.galleryModel.powerPauseActiveOnly = !root.galleryModel.powerPauseActiveOnly
                         }
 
                         UiText {
                             text: "Ignorar app:"
+                            color: root.colTextMuted
                         }
 
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 30
-                            color: Theme.controlFocusFill
-                            border.color: Theme.controlNormalBorder
-                            radius: 6
+                            color: root.colSurfaceHover
+                            border.color: root.colBorderSubtle
+                            radius: 4
 
                             TextInput {
                                 anchors.fill: parent
                                 anchors.leftMargin: 8
                                 anchors.rightMargin: 8
                                 verticalAlignment: TextInput.AlignVCenter
-                                color: Theme.controlFocusText
-                                selectionColor: Theme.accent
-                                selectedTextColor: Theme.accentText
+                                color: root.colTextPrimary
+                                selectionColor: root.colAccentCyan
+                                selectedTextColor: root.colCanvas
                                 font.family: Theme.fontFamily
                                 font.pixelSize: Theme.inputFontSize
                                 clip: true
@@ -534,7 +700,7 @@ FloatingWindow {
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: root.galleryModel.powerIgnoreAppid === ""
                                 text: "firefox, steam..."
-                                color: Theme.placeholder
+                                color: root.colTextMuted
                             }
                         }
                     }
@@ -545,7 +711,8 @@ FloatingWindow {
                         visible: root.galleryModel.effBackend() === "sway"
 
                         UiText {
-                            text: "Decode"
+                            text: "Decodificación:"
+                            color: root.colTextMuted
                         }
 
                         ShellButton {
@@ -556,6 +723,7 @@ FloatingWindow {
                         UiText {
                             Layout.preferredWidth: 92
                             text: root.galleryModel.powerHwdec
+                            color: root.colTextPrimary
                         }
 
                         ShellButton {
@@ -566,8 +734,8 @@ FloatingWindow {
 
                     UiText {
                         Layout.fillWidth: true
-                        color: Theme.menuMutedText
-                        text: "En Intel el bueno es vaapi-copy. Forzar sway en X11 rompe el apply hasta revertirlo."
+                        color: root.colTextMuted
+                        text: "En gráficos Intel integrados se recomienda vaapi-copy. Forzar sway en X11 impedirá aplicar fondos hasta corregirlo."
                     }
                 }
             }
@@ -578,11 +746,11 @@ FloatingWindow {
                 visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreSource === "motionbgs"
                 Repeater {
                     model: [
-                        { id: "", label: "todo" },
-                        { id: "tag:anime", label: "anime" },
-                        { id: "tag:nature", label: "nature" },
-                        { id: "tag:gaming", label: "gaming" },
-                        { id: "tag:space", label: "space" }
+                        { id: "", label: "Todos" },
+                        { id: "tag:anime", label: "Anime" },
+                        { id: "tag:nature", label: "Naturaleza" },
+                        { id: "tag:gaming", label: "Videojuegos" },
+                        { id: "tag:space", label: "Espacio" }
                     ]
 
                     delegate: ShellButton {
@@ -600,7 +768,7 @@ FloatingWindow {
                 }
 
                 ShellButton {
-                    label: "4K"
+                    label: "4K UHD"
                     primary: root.galleryModel.exploreQuality === "4k"
                     onActivated: root.galleryModel.exploreQuality = "4k"
                 }
@@ -613,9 +781,9 @@ FloatingWindow {
 
                 Repeater {
                     model: [
-                        { id: "toplist", label: "top" },
-                        { id: "hot", label: "hot" },
-                        { id: "random", label: "random" }
+                        { id: "toplist", label: "Populares" },
+                        { id: "hot", label: "Tendencias" },
+                        { id: "random", label: "Aleatorio" }
                     ]
 
                     delegate: ShellButton {
@@ -633,7 +801,7 @@ FloatingWindow {
                 visible: root.galleryModel.mode === "explore" && root.galleryModel.exploreSource === "bing"
 
                 ShellButton {
-                    label: "recientes"
+                    label: "Recientes"
                     primary: root.galleryModel.exploreQuery !== "archive" && root.galleryModel.exploreQuery.indexOf("archive") !== 0
                     onActivated: {
                         root.galleryModel.exploreQuery = "";
@@ -643,7 +811,7 @@ FloatingWindow {
                 }
 
                 ShellButton {
-                    label: "archivo"
+                    label: "Archivo histórico"
                     primary: root.galleryModel.exploreQuery === "archive" || root.galleryModel.exploreQuery.indexOf("archive") === 0
                     onActivated: {
                         root.galleryModel.exploreQuery = "archive";
@@ -659,151 +827,278 @@ FloatingWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                cellWidth: 200
-                cellHeight: 204
+                cellWidth: 212
+                cellHeight: root.galleryModel.mode === "explore" ? 212 : 180
                 model: root.galleryModel.mode === "explore" ? root.galleryModel.filteredExplore() : root.galleryModel.filteredItems()
 
-                delegate: Column {
+                delegate: Rectangle {
+                    id: cardItem
                     required property var modelData
 
-                    width: 190
-                    spacing: 4
+                    readonly property bool isCurrent: root.galleryModel.mode === "local" && root.galleryModel.currentId === modelData.id
+                    readonly property bool isSelected: root.galleryModel.mode === "local" && root.galleryModel.selectedId === modelData.id
 
-                    Rectangle {
-                        width: 190
-                        height: 120
-                        radius: 8
-                        color: Theme.controlNormalFill
-                        clip: true
+                    width: 202
+                    height: cardColumn.implicitHeight + 8
+                    radius: root.cardRadius
+                    color: isCurrent ? Qt.rgba(root.colAccentCyan.r, root.colAccentCyan.g, root.colAccentCyan.b, 0.12) : (cardHover.hovered ? root.colSurfaceHover : root.colSurface)
+                    border.color: isCurrent ? root.colAccentCyan : (isSelected ? root.colAccentCyan : (cardHover.hovered ? root.colAccentCyan : root.colBorderSubtle))
+                    border.width: (isCurrent || isSelected) ? 2 : 1
+                    clip: true
 
-                        Image {
-                            anchors.fill: parent
-                            source: {
-                                const t = modelData.thumb || "";
-                                if (t === "") {
-                                    return "";
+                    HoverHandler {
+                        id: cardHover
+                    }
+
+                    Column {
+                        id: cardColumn
+                        anchors.top: parent.top
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.margins: 4
+                        spacing: 5
+
+                        // 16:9 media-first preview container
+                        Rectangle {
+                            id: thumbBox
+                            width: parent.width
+                            height: Math.round(width * 9 / 16)
+                            radius: Math.max(2, root.cardRadius - 3)
+                            color: root.colCanvas
+                            clip: true
+
+                            Image {
+                                anchors.fill: parent
+                                source: {
+                                    const t = modelData.thumb || "";
+                                    if (t === "") {
+                                        return "";
+                                    }
+                                    return (t.indexOf("http://") === 0 || t.indexOf("https://") === 0) ? t : "file://" + t;
                                 }
-                                return (t.indexOf("http://") === 0 || t.indexOf("https://") === 0) ? t : "file://" + t;
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                cache: true
+                                smooth: true
+                                opacity: modelData.missing ? 0.35 : 1.0
                             }
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            smooth: true
-                            opacity: modelData.missing ? 0.4 : 1.0
-                        }
 
-                        UiText {
-                            anchors.centerIn: parent
-                            visible: (modelData.thumb || "") === ""
-                            text: modelData.type || "?"
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: {
-                                if (modelData.missing) {
-                                    root.galleryModel.status = (modelData.title || modelData.id) + " ya no está instalado";
-                                    return;
+                            UiText {
+                                anchors.centerIn: parent
+                                visible: (modelData.thumb || "") === ""
+                                text: {
+                                    const t = modelData.type || "";
+                                    return t === "video" ? "Vídeo" : (t === "scene" ? "Escena" : (t === "image" ? "Imagen" : "Fondo"));
                                 }
-                                if (root.galleryModel.mode === "explore") {
-                                    root.galleryModel.selectExplore(modelData);
-                                } else {
-                                    root.galleryModel.apply(modelData);
+                                color: root.colTextMuted
+                                font.pixelSize: 11
+                            }
+
+                            // Active badge
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.margins: 6
+                                visible: cardItem.isCurrent
+                                color: root.colCanvas
+                                border.color: root.colAccentCyan
+                                border.width: 1
+                                radius: 3
+                                implicitWidth: activeLabel.implicitWidth + 8
+                                implicitHeight: 18
+                                z: 2
+
+                                UiText {
+                                    id: activeLabel
+                                    anchors.centerIn: parent
+                                    text: "Activo"
+                                    color: root.colAccentCyan
+                                    font.pixelSize: 10
+                                    font.bold: true
                                 }
                             }
-                        }
 
-                        UiText {
-                            anchors.top: parent.top
-                            anchors.left: parent.left
-                            anchors.margins: 6
-                            visible: root.galleryModel.mode === "local" && root.galleryModel.currentId === modelData.id
-                            text: "ACTIVA"
-                            color: Theme.accent
-                            font.bold: true
-                        }
+                            // Missing badge
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                anchors.left: parent.left
+                                anchors.margins: 6
+                                visible: root.galleryModel.mode === "local" && modelData.missing === true
+                                color: root.colCanvas
+                                border.color: root.colAccentAmber
+                                border.width: 1
+                                radius: 3
+                                implicitWidth: missingLabel.implicitWidth + 8
+                                implicitHeight: 18
+                                z: 2
 
-                        UiText {
-                            anchors.bottom: parent.bottom
-                            anchors.left: parent.left
-                            anchors.margins: 6
-                            visible: root.galleryModel.mode === "local" && modelData.missing === true
-                            text: "no disponible"
-                            color: Theme.accent
-                            font.bold: true
-                        }
+                                UiText {
+                                    id: missingLabel
+                                    anchors.centerIn: parent
+                                    text: "No disponible"
+                                    color: root.colAccentAmber
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                }
+                            }
 
-                        IconImage {
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.margins: 6
-                            width: 20
-                            height: 20
-                            visible: root.galleryModel.mode === "local" && (modelData.type || "") !== "image"
-                            source: Quickshell.iconPath(modelData.favorite ? "emblem-favorite-symbolic" : "non-starred-symbolic", true)
-                            opacity: modelData.favorite ? 1.0 : 0.55
+                            // Media type tag
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                anchors.right: parent.right
+                                anchors.margins: 6
+                                visible: (modelData.type || "") !== "" && !modelData.missing
+                                color: Qt.rgba(13/255, 17/255, 23/255, 0.85)
+                                radius: 3
+                                implicitWidth: typeTagLabel.implicitWidth + 6
+                                implicitHeight: 16
+                                z: 2
+
+                                UiText {
+                                    id: typeTagLabel
+                                    anchors.centerIn: parent
+                                    text: {
+                                        const t = modelData.type || "";
+                                        return t === "video" ? "Vídeo" : (t === "image" ? "Imagen" : (t === "scene" ? "Escena" : t));
+                                    }
+                                    color: root.colTextPrimary
+                                    font.pixelSize: 9
+                                    font.bold: true
+                                }
+                            }
+
+                            // Favorite button
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                anchors.margins: 6
+                                width: 22
+                                height: 22
+                                radius: 11
+                                color: Qt.rgba(13/255, 17/255, 23/255, 0.75)
+                                visible: root.galleryModel.mode === "local" && (modelData.type || "") !== "image"
+                                z: 3
+
+                                IconImage {
+                                    anchors.centerIn: parent
+                                    width: 14
+                                    height: 14
+                                    source: Quickshell.iconPath(modelData.favorite ? "emblem-favorite-symbolic" : "non-starred-symbolic", true)
+                                    opacity: modelData.favorite ? 1.0 : 0.65
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: mouse => {
+                                        mouse.accepted = true;
+                                        root.galleryModel.toggleFavorite(modelData);
+                                    }
+                                }
+                            }
 
                             MouseArea {
                                 anchors.fill: parent
-                                anchors.margins: -8
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: mouse => {
-                                    mouse.accepted = true;
-                                    root.galleryModel.toggleFavorite(modelData);
+                                onClicked: {
+                                    if (modelData.missing) {
+                                        root.galleryModel.status = (modelData.title || modelData.id) + " ya no está instalado";
+                                        return;
+                                    }
+                                    if (root.galleryModel.mode === "explore") {
+                                        root.galleryModel.selectExplore(modelData);
+                                    } else {
+                                        root.galleryModel.apply(modelData);
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    UiText {
-                        width: 190
-                        elide: Text.ElideRight
-                        text: (modelData.title || modelData.id) + (modelData.missing ? " (no disponible)" : ((modelData.valid === false) ? " (invalid)" : ""))
-                    }
+                        // Title & technical info
+                        Column {
+                            width: parent.width
+                            spacing: 2
+                            leftPadding: 4
+                            rightPadding: 4
 
-                    UiText {
-                        width: 190
-                        elide: Text.ElideRight
-                        color: Theme.menuMutedText
-                        text: {
-                            if (root.galleryModel.mode === "explore") {
-                                return (modelData.kind || "online") + " • " + root.galleryModel.exploreSource;
+                            UiText {
+                                width: parent.width - 8
+                                elide: Text.ElideRight
+                                text: (modelData.title || modelData.id) + (modelData.missing ? " (no disponible)" : ((modelData.valid === false) ? " (inválido)" : ""))
+                                color: root.colTextPrimary
+                                font.bold: true
+                                font.pixelSize: 12
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (modelData.missing) {
+                                            root.galleryModel.status = (modelData.title || modelData.id) + " ya no está instalado";
+                                            return;
+                                        }
+                                        if (root.galleryModel.mode === "explore") {
+                                            root.galleryModel.selectExplore(modelData);
+                                        } else {
+                                            root.galleryModel.apply(modelData);
+                                        }
+                                    }
+                                }
                             }
-                            const t = modelData.type || "";
-                            const tl = t === "video" ? "Vídeo" : (t === "image" ? "Imagen" : t);
-                            const sz = modelData.size_h || "";
-                            return sz !== "" ? tl + " • " + sz : tl;
+
+                            RowLayout {
+                                width: parent.width - 8
+                                spacing: 6
+
+                                UiText {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    color: root.colTextMuted
+                                    font.pixelSize: 11
+                                    text: {
+                                        if (root.galleryModel.mode === "explore") {
+                                            return root.galleryModel.exploreSource;
+                                        }
+                                        return modelData.size_h ? modelData.size_h : "";
+                                    }
+                                }
+
+                                UiText {
+                                    visible: root.galleryModel.mode === "explore" && (modelData.kind || "") !== ""
+                                    color: root.colTextMuted
+                                    font.pixelSize: 10
+                                    text: modelData.kind || ""
+                                }
+                            }
                         }
-                    }
 
-                    RowLayout {
-                        spacing: 6
-                        visible: false
-                    }
-
-                    ShellButton {
-                        visible: root.galleryModel.mode === "explore"
-                        enabled: root.galleryModel.downloadingRef === ""
-                        label: {
-                            if (root.galleryModel.downloadingRef === modelData.ref) {
-                                return "Instalando";
+                        // Explore install button
+                        ShellButton {
+                            width: parent.width
+                            visible: root.galleryModel.mode === "explore"
+                            enabled: root.galleryModel.downloadingRef === ""
+                            label: {
+                                if (root.galleryModel.downloadingRef === modelData.ref) {
+                                    return "Descargando...";
+                                }
+                                if (root.galleryModel.installedLocalId(modelData.ref) !== "") {
+                                    return "Instalado";
+                                }
+                                return "Instalar fondo";
                             }
-                            if (root.galleryModel.installedLocalId(modelData.ref) !== "") {
-                                return "Instalado";
-                            }
-                            return "Instalar";
+                            primary: root.galleryModel.installedLocalId(modelData.ref) !== ""
+                            icon: root.galleryModel.installedLocalId(modelData.ref) !== "" ? "emblem-ok-symbolic" : "folder-download-symbolic"
+                            onActivated: root.galleryModel.installOrApply(modelData)
                         }
-                        primary: root.galleryModel.installedLocalId(modelData.ref) !== ""
-                        icon: root.galleryModel.installedLocalId(modelData.ref) !== "" ? "emblem-ok-symbolic" : "folder-download-symbolic"
-                        onActivated: root.galleryModel.installOrApply(modelData)
                     }
                 }
 
                 UiText {
                     anchors.centerIn: parent
                     visible: root.galleryModel.mode === "local" && galleryGrid.count === 0
-                    text: "No wallpapers: run we-wallpaper refresh + gallery-json"
+                    text: "No se encontraron fondos. Ejecuta: we-wallpaper refresh"
+                    color: root.colTextMuted
                 }
             }
 
@@ -814,7 +1109,8 @@ FloatingWindow {
 
                 UiText {
                     Layout.alignment: Qt.AlignHCenter
-                    text: "Buscando online..."
+                    text: "Consultando catálogo en línea..."
+                    color: root.colTextMuted
                 }
             }
 
@@ -825,11 +1121,11 @@ FloatingWindow {
 
                 UiText {
                     text: root.galleryModel.exploreError
-                    color: Theme.accent
+                    color: root.colAccentAmber
                 }
 
                 ShellButton {
-                    label: "Reintentar"
+                    label: "Reintentar búsqueda"
                     primary: true
                     onActivated: root.galleryModel.searchExplore()
                 }
@@ -838,8 +1134,8 @@ FloatingWindow {
             UiText {
                 Layout.alignment: Qt.AlignHCenter
                 visible: root.galleryModel.mode === "explore" && !root.galleryModel.exploreLoading && root.galleryModel.exploreError === "" && root.galleryModel.exploreItems.length === 0
-                text: "Elige fuente, escribe y pulsa Enter"
-                color: Theme.menuMutedText
+                text: "Selecciona una fuente y pulsa Enter para buscar"
+                color: root.colTextMuted
             }
 
             ShellButton {
@@ -860,7 +1156,7 @@ FloatingWindow {
                     }
                     return true;
                 }
-                label: "Cargar más"
+                label: "Cargar más resultados"
                 icon: "go-down-symbolic"
                 onActivated: {
                     if (root.galleryModel.exploreSource === "bing") {
@@ -883,27 +1179,37 @@ FloatingWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 200
                 visible: root.galleryModel.mode === "local" && root.galleryModel.selectedId !== ""
-                color: Theme.controlNormalFill
-                radius: 8
+                color: root.colSurface
+                border.color: root.colBorderSubtle
+                border.width: 1
+                radius: root.cardRadius
 
                 ColumnLayout {
                     anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 6
+                    anchors.margins: 12
+                    spacing: 8
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Rectangle {
+                            width: 8
+                            height: 8
+                            radius: 4
+                            color: root.colAccentCyan
+                        }
 
                         UiText {
                             text: {
                                 const sel = root.galleryModel.selectedItem();
                                 if (sel && (sel.type || "") === "image") {
-                                    return "Properties: " + root.galleryModel.selectedId + " (imagen estática: sin propiedades)";
+                                    return "Propiedades del fondo: " + (sel.title || root.galleryModel.selectedId) + " (imagen estática)";
                                 }
-                                return "Properties: " + root.galleryModel.selectedId;
+                                return "Propiedades del fondo: " + (sel && sel.title ? sel.title : root.galleryModel.selectedId);
                             }
                             font.bold: true
+                            color: root.colTextPrimary
                         }
 
                         Item {
@@ -911,7 +1217,7 @@ FloatingWindow {
                         }
 
                         ShellButton {
-                            label: "Borrar"
+                            label: "Eliminar"
                             icon: "user-trash-symbolic"
                             danger: true
                             visible: root.galleryModel.isStoreItem(root.galleryModel.selectedId)
@@ -925,13 +1231,13 @@ FloatingWindow {
                         }
 
                         ShellButton {
-                            label: "Save"
+                            label: "Guardar perfil"
                             visible: root.galleryModel.props.length > 0
                             onActivated: root.galleryModel.saveProps()
                         }
 
                         ShellButton {
-                            label: "Apply"
+                            label: "Aplicar fondo"
                             primary: true
                             onActivated: root.galleryModel.applySelected()
                         }
@@ -940,8 +1246,8 @@ FloatingWindow {
                     UiText {
                         Layout.fillWidth: true
                         visible: root.galleryModel.props.length > 0
-                        color: Theme.menuMutedText
-                        text: "Save = guarda estos valores para siempre (los usa al aplicar). Apply = lo pone en pantalla ahora."
+                        color: root.colTextMuted
+                        text: "Guardar perfil conserva estos ajustes para futuras sesiones. Aplicar actualiza la escena activa de inmediato."
                     }
 
                     Flickable {
@@ -953,7 +1259,7 @@ FloatingWindow {
                         Column {
                             id: propsColumn
                             width: parent.width
-                            spacing: 4
+                            spacing: 6
 
                             Repeater {
                                 model: root.galleryModel.props
@@ -967,6 +1273,7 @@ FloatingWindow {
                                         Layout.preferredWidth: 220
                                         elide: Text.ElideRight
                                         text: (modelData.text || modelData.name) + (modelData.saved ? " *" : "")
+                                        color: root.colTextPrimary
                                     }
 
                                     PanelToggleSwitch {
@@ -980,28 +1287,40 @@ FloatingWindow {
                                         onToggled: root.galleryModel.editProp(modelData.name, checked ? "0" : "1")
                                     }
 
-                                    TextInput {
+                                    Rectangle {
                                         visible: !(modelData.type === "boolean" || modelData.type === "bool")
                                         Layout.fillWidth: true
-                                        color: Theme.controlFocusText
-                                        selectionColor: Theme.accent
-                                        selectedTextColor: Theme.accentText
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.inputFontSize
-                                        text: modelData.value || ""
-                                        onTextChanged: root.galleryModel.editProp(modelData.name, text)
+                                        Layout.preferredHeight: 28
+                                        color: root.colSurfaceHover
+                                        border.color: root.colBorderSubtle
+                                        radius: 4
+
+                                        TextInput {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            verticalAlignment: TextInput.AlignVCenter
+                                            color: root.colTextPrimary
+                                            selectionColor: root.colAccentCyan
+                                            selectedTextColor: root.colCanvas
+                                            font.family: Theme.fontFamily
+                                            font.pixelSize: Theme.inputFontSize
+                                            text: modelData.value || ""
+                                            onTextChanged: root.galleryModel.editProp(modelData.name, text)
+                                        }
                                     }
                                 }
                             }
 
                             UiText {
                                 visible: root.galleryModel.props.length === 0
+                                color: root.colTextMuted
                                 text: {
                                     const sel = root.galleryModel.selectedItem();
                                     if (sel && (sel.type || "") === "image") {
-                                        return "Imagen estática: se aplica con feh (sin motor)";
+                                        return "Fondo de imagen fija: aplicado mediante feh sin parámetros interactivos";
                                     }
-                                    return "Este vídeo no tiene propiedades editables: se aplica con los valores por defecto del motor. Apply lo reinicia.";
+                                    return "Este vídeo o escena utiliza los valores predeterminados del motor. Aplicar reinicia la reproducción.";
                                 }
                             }
                         }

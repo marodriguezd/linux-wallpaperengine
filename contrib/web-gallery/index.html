@@ -1,0 +1,2509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>linux-wallpaperengine · Control Center & Gallery</title>
+  <style>
+    :root {
+      --bg-canvas: #0d1117;
+      --bg-surface: #161c24;
+      --bg-surface-elevated: #1e2632;
+      --border-subtle: #232d3b;
+      --border-hover: #334255;
+      --border-active: #00d4be;
+      --border-focus: #00d4be;
+      --text-primary: #e6edf3;
+      --text-muted: #8b9bb0;
+      --accent: #00d4be;
+      --accent-cyan: #00d4be;
+      --accent-cyan-tint: rgba(0, 212, 190, 0.12);
+      --accent-cyan-glow: rgba(0, 212, 190, 0.28);
+      --accent-amber: #f59e0b;
+      --accent-amber-tint: rgba(245, 158, 11, 0.12);
+      --radius-card: 8px;
+      --radius-btn: 6px;
+      --radius-pill: 20px;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: "JetBrains Mono", "Fira Code", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --transition-fast: 0.15s cubic-bezier(0.2, 0, 0, 1);
+      --transition-smooth: 0.22s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      height: 100%;
+      background-color: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 13.5px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: var(--bg-canvas);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-subtle);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--border-hover);
+    }
+
+    /* Layout Shell */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+    }
+
+    /* Header */
+    .app-header {
+      flex-shrink: 0;
+      height: 52px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      z-index: 20;
+    }
+
+    .header-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-cyan);
+    }
+
+    .brand-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .version-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+    }
+
+    /* Toolkit Compatibility Selector */
+    .toolkit-selector {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      background: var(--bg-canvas);
+      padding: 3px;
+      border-radius: var(--radius-pill, 20px);
+      border: 1px solid var(--border-subtle);
+      transition: all var(--transition-fast);
+    }
+
+    .toolkit-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-ui);
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: var(--radius-pill, 20px);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+      user-select: none;
+    }
+
+    .toolkit-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .toolkit-btn.active {
+      background: var(--bg-surface-elevated);
+      color: var(--accent-cyan);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+    }
+
+    .dot-swatch {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .engine-telemetry {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+    }
+
+    .telemetry-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-muted);
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+    .telemetry-item strong {
+      color: var(--text-primary);
+      font-weight: 500;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan);
+      display: inline-block;
+    }
+
+    .amber-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent-amber);
+      display: inline-block;
+    }
+
+    /* Main Viewport */
+    .app-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Catalog View */
+    .catalog-view {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      min-width: 0;
+      background: var(--bg-canvas);
+    }
+
+    .catalog-controls {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      padding: 16px 24px;
+      background: rgba(13, 17, 23, 0.94);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .search-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .search-box {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      color: var(--text-muted);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-input {
+      width: 100%;
+      height: 38px;
+      padding: 0 38px 0 36px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-btn, 6px);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color var(--transition-fast);
+    }
+
+    .search-input:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .kbd-hint {
+      position: absolute;
+      right: 12px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      pointer-events: none;
+    }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .filter-tabs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-surface);
+      padding: 3px;
+      border-radius: var(--radius-pill, 20px);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .filter-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-ui);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: var(--radius-pill, 20px);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .filter-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .filter-tab.active {
+      background: var(--bg-surface-elevated);
+      color: var(--accent-cyan);
+    }
+
+    .tab-counter {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      opacity: 0.8;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-toolbar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-family: var(--font-ui);
+      font-size: 12.5px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: var(--radius-btn, 6px);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .btn-toolbar:hover {
+      color: var(--text-primary);
+      border-color: var(--border-hover);
+    }
+
+    .catalog-meta {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
+
+    /* Grid Area */
+    .grid-container {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 20px;
+    }
+
+    /* Wallpaper Card */
+    .wallpaper-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-card, 8px);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color var(--transition-fast), transform var(--transition-fast);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .wallpaper-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+
+    .wallpaper-card.selected {
+      border-color: var(--border-focus);
+      background: var(--bg-surface-elevated);
+    }
+
+    .wallpaper-card.active-wallpaper {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 1px var(--accent-cyan), 0 4px 20px var(--accent-cyan-tint);
+    }
+
+    .card-preview-box {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      position: relative;
+      background: #06090e;
+      overflow: hidden;
+    }
+
+    .card-preview-art {
+      width: 100%;
+      height: 100%;
+      display: block;
+      transition: transform 0.3s ease;
+    }
+
+    .wallpaper-card:hover .card-preview-art {
+      transform: scale(1.025);
+    }
+
+    .preview-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(180deg, rgba(13, 17, 23, 0.2) 0%, transparent 40%, rgba(13, 17, 23, 0.85) 100%);
+      pointer-events: none;
+    }
+
+    .card-badges-top {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .badge-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-res, .badge-type {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(13, 17, 23, 0.85);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      backdrop-filter: blur(4px);
+    }
+
+    .badge-type.scene {
+      color: #7ee787;
+      border-color: rgba(126, 231, 135, 0.3);
+    }
+
+    .badge-type.video {
+      color: #79c0ff;
+      border-color: rgba(121, 192, 255, 0.3);
+    }
+
+    .btn-fav {
+      pointer-events: auto;
+      background: rgba(13, 17, 23, 0.8);
+      border: 1px solid var(--border-subtle);
+      border-radius: 4px;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+      backdrop-filter: blur(4px);
+    }
+
+    .btn-fav:hover {
+      color: var(--accent-amber);
+      border-color: var(--border-hover);
+    }
+
+    .btn-fav.active {
+      color: var(--accent-amber);
+      border-color: var(--accent-amber);
+    }
+
+    .active-strip {
+      position: absolute;
+      bottom: 8px;
+      left: 10px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(13, 17, 23, 0.9);
+      border: 1px solid var(--accent-cyan);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--accent-cyan);
+      backdrop-filter: blur(4px);
+      z-index: 2;
+    }
+
+    .card-content {
+      padding: 12px 14px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1;
+    }
+
+    .card-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-sub {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* Inspector Side Panel */
+    .inspector {
+      width: 420px;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border-subtle);
+      background: var(--bg-surface);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      transition: margin-right 0.2s cubic-bezier(0.2, 0, 0, 1);
+      z-index: 15;
+    }
+
+    .inspector.collapsed {
+      margin-right: -420px;
+    }
+
+    .inspector-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--bg-surface);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .inspector-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .inspector-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 4px 6px;
+      border-radius: 4px;
+      transition: color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .inspector-close:hover {
+      color: var(--text-primary);
+      background: var(--bg-surface-elevated);
+    }
+
+    .inspector-body {
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .inspector-hero {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      overflow: hidden;
+      position: relative;
+      background: #000;
+    }
+
+    .inspector-hero-art {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .section-title {
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Metadata Table */
+    .meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .meta-table tr {
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .meta-table tr:last-child {
+      border-bottom: none;
+    }
+
+    .meta-table td {
+      padding: 6px 0;
+    }
+
+    .meta-table .label {
+      color: var(--text-muted);
+      width: 100px;
+    }
+
+    .meta-table .value {
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      text-align: right;
+      word-break: break-all;
+    }
+
+    /* Power Profiles */
+    .profile-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .profile-card {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-btn, 6px);
+      padding: 10px 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: border-color var(--transition-fast), background var(--transition-fast);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .profile-card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .profile-card.active {
+      border-color: var(--accent-cyan);
+      background: var(--accent-cyan-tint);
+    }
+
+    .profile-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .profile-fps {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--accent-cyan);
+    }
+
+    .profile-desc {
+      font-size: 10.5px;
+      color: var(--text-muted);
+    }
+
+    /* Presentation & Hardware Layer Selectors */
+    .layer-selector {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .gpu-selector {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-top: 4px;
+    }
+
+    .layer-pill, .gpu-pill {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-btn, 6px);
+      color: var(--text-muted);
+      font-family: var(--font-ui);
+      font-size: 11px;
+      font-weight: 500;
+      padding: 7px 6px;
+      cursor: pointer;
+      text-align: center;
+      transition: all var(--transition-fast);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.25;
+      user-select: none;
+    }
+
+    .layer-pill:hover, .gpu-pill:hover {
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+
+    .layer-pill.active, .gpu-pill.active {
+      border-color: var(--accent-cyan);
+      background: var(--accent-cyan-tint);
+      color: var(--accent-cyan);
+      font-weight: 600;
+      box-shadow: 0 0 10px var(--accent-cyan-tint);
+    }
+
+    /* Engine Settings Form */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .form-select {
+      height: 32px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-btn, 4px);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 12.5px;
+      padding: 0 10px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .form-select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .form-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .form-slider {
+      flex: 1;
+      accent-color: var(--accent-cyan);
+    }
+
+    .slider-val {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      width: 44px;
+      text-align: right;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+    }
+
+    .toggle-label {
+      font-size: 12.5px;
+      color: var(--text-primary);
+    }
+
+    .toggle-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .switch-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--border-subtle);
+      transition: var(--transition-fast);
+      border-radius: 20px;
+    }
+
+    .switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 3px;
+      bottom: 3px;
+      background-color: var(--text-primary);
+      transition: var(--transition-fast);
+      border-radius: 50%;
+    }
+
+    input:checked + .switch-slider {
+      background-color: var(--accent-cyan);
+    }
+
+    input:checked + .switch-slider:before {
+      transform: translateX(16px);
+      background-color: #06090e;
+    }
+
+    /* CLI Command Generator */
+    .cli-generator {
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-card, 6px);
+      padding: 12px;
+      position: relative;
+    }
+
+    .cli-mode-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      background: var(--bg-canvas);
+      padding: 2px;
+      border-radius: var(--radius-btn, 4px);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .cli-mode-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: calc(var(--radius-btn, 4px) - 2px);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+    }
+
+    .cli-mode-btn:hover {
+      color: var(--text-primary);
+    }
+
+    .cli-mode-btn.active {
+      background: var(--bg-surface-elevated);
+      color: var(--accent-cyan);
+    }
+
+    .cli-code {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: #79c0ff;
+      word-break: break-all;
+      line-height: 1.6;
+      user-select: all;
+    }
+
+    .cli-copy-row {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      margin-top: 8px;
+    }
+
+    .btn-copy {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 11.5px;
+      padding: 4px 10px;
+      border-radius: var(--radius-btn, 4px);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition-fast);
+    }
+
+    .btn-copy:hover {
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    /* Action Buttons */
+    .action-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .btn-primary {
+      height: 38px;
+      background: var(--accent-cyan);
+      border: none;
+      border-radius: var(--radius-btn, 6px);
+      color: #06090e;
+      font-family: var(--font-ui);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: filter var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(1.08);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      height: 34px;
+      background: transparent;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-btn, 6px);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 12.5px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: var(--transition-fast);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border-hover);
+      background: var(--bg-surface-elevated);
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      padding: 10px 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--accent-cyan);
+      border-radius: var(--radius-btn, 6px);
+      color: var(--text-primary);
+      font-size: 12.5px;
+      font-family: var(--font-mono);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 100;
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .app-shell {
+        overflow: auto;
+      }
+      .app-body {
+        flex-direction: column;
+        overflow: visible;
+      }
+      .inspector {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border-subtle);
+      }
+      .inspector.collapsed {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <span>linux-wallpaperengine</span>
+          <span class="version-tag">we 2.0.0</span>
+        </div>
+      </div>
+
+      <!-- Toolkit Compatibility Selector -->
+      <div class="toolkit-selector" role="group" aria-label="Toolkit Compatibility">
+        <button type="button" class="toolkit-btn active" data-toolkit="auto" title="Sistema / Portal XDG (Detección automática)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            <line x1="2" y1="12" x2="22" y2="12"></line>
+          </svg>
+          <span>Auto / Sistema</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="gtk" title="GNOME Libadwaita (#1e1e1e/#242424, azul #3584e4, 12px pill radius)">
+          <span class="dot-swatch" style="background:#3584e4;"></span>
+          <span>GTK / Libadwaita</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="qt" title="KDE Plasma Breeze (#232629/#31363b, cyan #3daee9, 6px clean radius)">
+          <span class="dot-swatch" style="background:#3daee9;"></span>
+          <span>Qt / Breeze</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="brave" title="Brave & Obsidian (#0d1117/#161c24, Brave Lion Orange #fb542b, 8px radius)">
+          <span class="dot-swatch" style="background:#fb542b;"></span>
+          <span>Brave / Obsidian</span>
+        </button>
+      </div>
+
+      <div class="engine-telemetry">
+        <div class="telemetry-item" title="Live status">
+          <span class="live-dot" id="header-pulse"></span>
+          <span>Engine: <strong id="header-active-name">Cyberpunk Lucy 4K</strong></span>
+        </div>
+        <div class="telemetry-item" title="Active Display Backend">
+          <span>Backend: <strong id="header-backend">x11-desktop</strong></span>
+        </div>
+        <div class="telemetry-item" title="Primary Monitor">
+          <span>Output: <strong id="header-output">eDP-1 · 144 Hz</strong></span>
+        </div>
+        <div class="telemetry-item" title="Power Governor Status">
+          <span class="amber-dot"></span>
+          <span>Battery: <strong id="header-battery">78% · AC</strong></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- App Body -->
+    <div class="app-body">
+      <!-- Main Catalog View -->
+      <section class="catalog-view" aria-label="Wallpaper Catalog">
+        <div class="catalog-controls">
+          <div class="search-row">
+            <div class="search-box">
+              <span class="search-icon" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </span>
+              <input type="text" id="search-input" class="search-input" placeholder="Search wallpapers by title, tags, or Steam ID..." autocomplete="off">
+              <span class="kbd-hint">/</span>
+            </div>
+          </div>
+
+          <div class="filter-row">
+            <div class="filter-tabs" role="tablist">
+              <button class="filter-tab active" data-filter="all" role="tab" aria-selected="true">
+                <span>All</span>
+                <span class="tab-counter" id="count-all">0</span>
+              </button>
+              <button class="filter-tab" data-filter="scene" role="tab" aria-selected="false">
+                <span>Scene</span>
+                <span class="tab-counter" id="count-scene">0</span>
+              </button>
+              <button class="filter-tab" data-filter="video" role="tab" aria-selected="false">
+                <span>Video</span>
+                <span class="tab-counter" id="count-video">0</span>
+              </button>
+              <button class="filter-tab" data-filter="favorites" role="tab" aria-selected="false">
+                <span>Favorites</span>
+                <span class="tab-counter" id="count-favorites">0</span>
+              </button>
+            </div>
+
+            <div class="toolbar-actions">
+              <label class="btn-toolbar" title="Import wallpapers from we list --json">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Load JSON</span>
+                <input type="file" id="json-file-input" accept=".json" style="display:none;">
+              </label>
+
+              <span class="catalog-meta" id="catalog-count-label">12 wallpapers found</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Wallpaper Grid -->
+        <div class="grid-container" id="wallpaper-grid" role="region" aria-label="Wallpapers Grid"></div>
+      </section>
+
+      <!-- Side Inspector Panel -->
+      <aside class="inspector" id="inspector" aria-label="Wallpaper Inspector">
+        <div class="inspector-header">
+          <h2 id="inspect-title">Wallpaper Details</h2>
+          <button class="inspector-close" id="btn-close-inspector" title="Close inspector (Esc)">
+            <span>Close</span>
+            <span class="kbd-hint">Esc</span>
+          </button>
+        </div>
+
+        <div class="inspector-body">
+          <!-- Hero Preview -->
+          <div class="inspector-hero" id="inspector-hero">
+            <!-- Rendered SVG preview inserted by JS -->
+          </div>
+
+          <!-- Metadata -->
+          <div>
+            <div class="section-title">Specifications</div>
+            <table class="meta-table">
+              <tbody>
+                <tr>
+                  <td class="label">Workshop ID</td>
+                  <td class="value" id="spec-id">—</td>
+                </tr>
+                <tr>
+                  <td class="label">Render Type</td>
+                  <td class="value" id="spec-type">—</td>
+                </tr>
+                <tr>
+                  <td class="label">Resolution</td>
+                  <td class="value" id="spec-resolution">—</td>
+                </tr>
+                <tr>
+                  <td class="label">Archive Size</td>
+                  <td class="value" id="spec-size">—</td>
+                </tr>
+                <tr>
+                  <td class="label">Author</td>
+                  <td class="value" id="spec-author">—</td>
+                </tr>
+                <tr>
+                  <td class="label">VFS Root</td>
+                  <td class="value" id="spec-path" style="font-size:10px;">—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Power Profile Selector -->
+          <div>
+            <div class="section-title">
+              <span>Power Profile</span>
+              <span id="label-active-fps" style="color:var(--accent-cyan); font-family:var(--font-mono); font-size:11px;">60 FPS</span>
+            </div>
+            <div class="profile-selector">
+              <div class="profile-card" data-preset="battery" data-fps="15">
+                <span class="profile-name">Battery</span>
+                <span class="profile-fps">15 FPS</span>
+                <span class="profile-desc">Pacer freeze</span>
+              </div>
+              <div class="profile-card" data-preset="balanced" data-fps="30">
+                <span class="profile-name">Balanced</span>
+                <span class="profile-fps">30 FPS</span>
+                <span class="profile-desc">Low load</span>
+              </div>
+              <div class="profile-card active" data-preset="smooth" data-fps="60">
+                <span class="profile-name">Smooth</span>
+                <span class="profile-fps">60 FPS</span>
+                <span class="profile-desc">Fluid GL</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Presentation & Hardware Layer Controls -->
+          <div>
+            <div class="section-title">Presentation & Hardware Layer</div>
+
+            <div class="form-group">
+              <label class="form-label">Presentation Layer</label>
+              <div class="layer-selector" id="layer-selector">
+                <button type="button" class="layer-pill active" data-layer="x11-desktop" title="X11 Desktop (Root window)">X11 Desktop</button>
+                <button type="button" class="layer-pill" data-layer="x11-root" title="X11 Root (Legacy root window)">X11 Root</button>
+                <button type="button" class="layer-pill" data-layer="wayland-background" title="Wayland Background (zwlr_layer_shell)">Wayland Background</button>
+                <button type="button" class="layer-pill" data-layer="wayland-bottom" title="Wayland Bottom (zwlr_layer_shell)">Wayland Bottom</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Hardware GPU Profile</label>
+              <div class="gpu-selector" id="gpu-selector">
+                <button type="button" class="gpu-pill" data-gpu="intel" title="Intel iGPU - Ahorro de batería y D3cold para NVIDIA">Intel iGPU (Batería)</button>
+                <button type="button" class="gpu-pill" data-gpu="nvidia" title="NVIDIA dGPU - Rendimiento y aceleración dedicada">dGPU Rendimiento</button>
+                <button type="button" class="gpu-pill active" data-gpu="auto" title="Auto - Detección inteligente">Auto</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Engine Controls -->
+          <div>
+            <div class="section-title">Engine Parameters</div>
+
+            <div class="form-group">
+              <label class="form-label" for="select-backend">Display Backend</label>
+              <select id="select-backend" class="form-select">
+                <option value="auto">auto (detect X11 / Wayland)</option>
+                <option value="x11-desktop" selected>x11-desktop (root window)</option>
+                <option value="x11-root">x11-root (legacy root)</option>
+                <option value="wayland">wayland (zwlr_layer_shell)</option>
+                <option value="headless">headless (offscreen)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="select-output">Target Output</label>
+              <select id="select-output" class="form-select">
+                <option value="">All outputs (default)</option>
+                <option value="eDP-1" selected>eDP-1 (Primary 144Hz)</option>
+                <option value="DP-1">DP-1 (External 4K)</option>
+                <option value="HDMI-A-1">HDMI-A-1</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">
+                <span>FPS Governor Limit</span>
+                <span class="slider-val" id="val-fps">60</span>
+              </label>
+              <div class="form-slider-row">
+                <input type="range" id="slider-fps" class="form-slider" min="15" max="144" step="5" value="60">
+              </div>
+            </div>
+
+            <div class="toggle-row">
+              <div>
+                <div class="toggle-label">Pause on Battery</div>
+                <div class="toggle-sub">Freeze render loops when on DC</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-pause-battery">
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div>
+                <div class="toggle-label">Video Audio</div>
+                <div class="toggle-sub">Enable audio track decoding</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-audio">
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div>
+                <div class="toggle-label">Pause on Fullscreen</div>
+                <div class="toggle-sub">Stop when games or players hide desktop</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="toggle-pause-fullscreen" checked>
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- CLI Command Generator -->
+          <div>
+            <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+              <span>CLI Command</span>
+              <div class="cli-mode-toggle" id="cli-mode-toggle">
+                <button type="button" class="cli-mode-btn active" data-cli="we-run" title="Native C++ engine command">we run</button>
+                <button type="button" class="cli-mode-btn" data-cli="we-wallpaper" title="Helper wrapper command">we-wallpaper</button>
+              </div>
+            </div>
+            <div class="cli-generator">
+              <code class="cli-code" id="cli-command">we run 3615154110 --backend x11-desktop --fps 60 --output eDP-1</code>
+              <div class="cli-copy-row">
+                <button class="btn-copy" id="btn-copy-cli" title="Copy exact terminal command">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span id="copy-btn-text">Copy command</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="action-group">
+            <button class="btn-primary" id="btn-apply-wallpaper">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>Apply wallpaper</span>
+            </button>
+            <button class="btn-secondary" id="btn-test-headless">
+              <span>Test headless (30 frames)</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Toast Element -->
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span class="live-dot"></span>
+    <span id="toast-message">Wallpaper applied</span>
+  </div>
+
+  <script>
+    // Embedded Catalog Data matching Steam Workshop & engine conventions
+    const INITIAL_WALLPAPERS = [
+      {
+        id: "3615154110",
+        title: "Cyberpunk Lucy 4K",
+        type: "scene",
+        resolution: "3840×2160",
+        size: "184.2 MB",
+        author: "kuro_neko",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/3615154110",
+        tags: ["cyberpunk", "anime", "lucy", "4k"],
+        artTheme: "cyberpunk",
+        description: "High-fidelity 3D scene with dynamic neon rain reflections, volumetric lighting, and mouse-reactive parallax."
+      },
+      {
+        id: "2847192031",
+        title: "Looks Like Rain",
+        type: "scene",
+        resolution: "1920×1080",
+        size: "52.4 MB",
+        author: "ambient_flow",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2847192031",
+        tags: ["rain", "nature", "particles", "audio-responsive"],
+        artTheme: "rain",
+        description: "Procedural particle rain on glass with window droplet physics and ambient thunderstorm audio."
+      },
+      {
+        id: "2910481745",
+        title: "Cloud Watching",
+        type: "video",
+        resolution: "1920×1080",
+        size: "89.1 MB",
+        author: "studio_zenith",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2910481745",
+        tags: ["nature", "clouds", "relaxing", "sunset"],
+        artTheme: "clouds",
+        description: "4K 60 FPS seamless looping video of cumulus cloud formations at golden hour, optimized for libmpv GPU decoding."
+      },
+      {
+        id: "2481029482",
+        title: "Cozy Winter Cabin",
+        type: "video",
+        resolution: "1920×1080",
+        size: "112.0 MB",
+        author: "nordic_visuals",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2481029482",
+        tags: ["winter", "fireplace", "cozy", "ambient"],
+        artTheme: "winter",
+        description: "Gentle snowfall outside a warm timber cabin interior with glowing hearth light and crackling fireplace audio."
+      },
+      {
+        id: "3104928173",
+        title: "Solar Orbit 3D",
+        type: "scene",
+        resolution: "3840×2160",
+        size: "241.6 MB",
+        author: "astral_labs",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/3104928173",
+        tags: ["space", "sci-fi", "planets", "interactive"],
+        artTheme: "space",
+        description: "Interactive Keplerian solar system model featuring real-time planetary orbits, coronal mass ejections, and nebula skybox."
+      },
+      {
+        id: "2719401829",
+        title: "Neon Highway Synthwave",
+        type: "scene",
+        resolution: "2560×1440",
+        size: "96.8 MB",
+        author: "retro_vector",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2719401829",
+        tags: ["synthwave", "retro", "neon", "80s"],
+        artTheme: "synthwave",
+        description: "Infinite wireframe grid road with wireframe mountains, glowing neon sun, and audio-reactive horizon pulse."
+      },
+      {
+        id: "2983710294",
+        title: "Deep Ocean Bioluminescence",
+        type: "video",
+        resolution: "3840×2160",
+        size: "165.5 MB",
+        author: "abyss_nature",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2983710294",
+        tags: ["ocean", "bioluminescence", "jellyfish", "dark"],
+        artTheme: "ocean",
+        description: "Underwater 4K macro footage of pulsating deep-sea jellyfish emitting electric cyan and amber phosphorescence."
+      },
+      {
+        id: "2648190284",
+        title: "Endless Pine Forest",
+        type: "scene",
+        resolution: "2560×1440",
+        size: "74.3 MB",
+        author: "misty_peaks",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2648190284",
+        tags: ["nature", "forest", "fog", "minimalist"],
+        artTheme: "forest",
+        description: "Atmospheric morning fog rolling over evergreen mountains with wind swaying procedural tree silhouettes."
+      },
+      {
+        id: "3291048271",
+        title: "Tokyo Alleyway Rain",
+        type: "video",
+        resolution: "3840×2160",
+        size: "198.7 MB",
+        author: "shinjuku_lens",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/3291048271",
+        tags: ["tokyo", "japan", "rain", "street"],
+        artTheme: "alley",
+        description: "Cinematic neon-lit alley in Shinjuku during midnight drizzle with puddle reflections and steam vents."
+      },
+      {
+        id: "2301984712",
+        title: "Minimalist Sand Dunes",
+        type: "scene",
+        resolution: "3840×2160",
+        size: "38.2 MB",
+        author: "bauhaus_arch",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/2301984712",
+        tags: ["minimalist", "desert", "clean", "geometric"],
+        artTheme: "desert",
+        description: "Stark desert dunes with dynamic sun shadow casting and subtle windblown sand particle shaders."
+      },
+      {
+        id: "3019482716",
+        title: "Lofi Room Night",
+        type: "scene",
+        resolution: "1920×1080",
+        size: "81.4 MB",
+        author: "chilled_beats",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/3019482716",
+        tags: ["lofi", "room", "study", "chill"],
+        artTheme: "lofi",
+        description: "Cozy midnight study desk with blinking PC towers, desk lamp warmth, and outdoor night cityscape."
+      },
+      {
+        id: "3319028471",
+        title: "Nebula Drift",
+        type: "video",
+        resolution: "3840×2160",
+        size: "142.3 MB",
+        author: "cosmic_voyage",
+        path: "~/.local/share/Steam/steamapps/workshop/content/431960/3319028471",
+        tags: ["space", "galaxy", "nebula", "astronomy"],
+        artTheme: "nebula",
+        description: "Ultra-high-definition rendered fly-through of an emission nebula with dense star clusters and cosmic dust clouds."
+      }
+    ];
+
+    // Procedural SVG artwork generator for crisp, self-contained 16:9 previews
+    function renderArtworkSvg(theme, title) {
+      switch (theme) {
+        case "cyberpunk":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="cp-sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#0a0a1a"/>
+                <stop offset="70%" stop-color="#1f0c2e"/>
+                <stop offset="100%" stop-color="#3b093f"/>
+              </linearGradient>
+              <linearGradient id="cp-neon" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#00d4be"/>
+                <stop offset="100%" stop-color="#ff007a"/>
+              </linearGradient>
+            </defs>
+            <rect width="640" height="360" fill="url(#cp-sky)"/>
+            <!-- Cyberpunk skyscrapers -->
+            <rect x="30" y="90" width="70" height="270" fill="#0b0f19"/>
+            <rect x="120" y="50" width="95" height="310" fill="#080c14"/>
+            <rect x="235" y="110" width="80" height="250" fill="#0e1322"/>
+            <rect x="330" y="40" width="110" height="320" fill="#060910"/>
+            <rect x="460" y="80" width="90" height="280" fill="#0d111d"/>
+            <rect x="570" y="120" width="70" height="240" fill="#090d16"/>
+            <!-- Neon accents -->
+            <line x1="120" y1="50" x2="120" y2="360" stroke="#00d4be" stroke-width="2" opacity="0.8"/>
+            <line x1="330" y1="40" x2="330" y2="360" stroke="#ff007a" stroke-width="2" opacity="0.8"/>
+            <line x1="440" y1="40" x2="440" y2="360" stroke="#00d4be" stroke-width="1.5" opacity="0.7"/>
+            <!-- Window grids -->
+            <g fill="#00d4be" opacity="0.6">
+              <rect x="140" y="70" width="4" height="4"/><rect x="155" y="70" width="4" height="4"/><rect x="170" y="70" width="4" height="4"/>
+              <rect x="140" y="90" width="4" height="4"/><rect x="170" y="90" width="4" height="4"/>
+              <rect x="140" y="120" width="4" height="4"/><rect x="155" y="120" width="4" height="4"/>
+            </g>
+            <g fill="#ff007a" opacity="0.7">
+              <rect x="350" y="60" width="6" height="4"/><rect x="370" y="60" width="6" height="4"/><rect x="390" y="60" width="6" height="4"/>
+              <rect x="350" y="80" width="6" height="4"/><rect x="390" y="80" width="6" height="4"/>
+              <rect x="350" y="110" width="6" height="4"/><rect x="370" y="110" width="6" height="4"/><rect x="390" y="110" width="6" height="4"/>
+            </g>
+            <!-- Ground wet reflection -->
+            <rect x="0" y="310" width="640" height="50" fill="#05070c"/>
+            <ellipse cx="320" cy="330" rx="280" ry="12" fill="url(#cp-neon)" opacity="0.25"/>
+          </svg>`;
+
+        case "rain":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#0b131a"/>
+            <!-- Distant blurred city glow -->
+            <circle cx="150" cy="180" r="60" fill="#00d4be" opacity="0.15" filter="blur(20px)"/>
+            <circle cx="420" cy="140" r="75" fill="#f59e0b" opacity="0.12" filter="blur(25px)"/>
+            <circle cx="300" cy="220" r="50" fill="#3b82f6" opacity="0.18" filter="blur(18px)"/>
+            <!-- Rain streaks -->
+            <g stroke="#8b9bb0" stroke-width="1.2" opacity="0.45" stroke-linecap="round">
+              <line x1="40" y1="20" x2="25" y2="90"/>
+              <line x1="120" y1="50" x2="105" y2="130"/>
+              <line x1="190" y1="10" x2="175" y2="80"/>
+              <line x1="260" y1="80" x2="245" y2="160"/>
+              <line x1="340" y1="30" x2="325" y2="110"/>
+              <line x1="410" y1="90" x2="395" y2="170"/>
+              <line x1="490" y1="40" x2="475" y2="120"/>
+              <line x1="560" y1="70" x2="545" y2="150"/>
+              <line x1="90" y1="180" x2="75" y2="260"/>
+              <line x1="220" y1="200" x2="205" y2="280"/>
+              <line x1="380" y1="190" x2="365" y2="270"/>
+              <line x1="510" y1="210" x2="495" y2="290"/>
+            </g>
+            <!-- Water beads on glass -->
+            <circle cx="120" cy="110" r="3.5" fill="#e6edf3" opacity="0.5"/>
+            <circle cx="280" cy="190" r="4.5" fill="#e6edf3" opacity="0.6"/>
+            <circle cx="450" cy="130" r="3" fill="#e6edf3" opacity="0.5"/>
+            <circle cx="360" cy="270" r="5" fill="#e6edf3" opacity="0.6"/>
+          </svg>`;
+
+        case "clouds":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="cloud-sky" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#141c2b"/>
+                <stop offset="60%" stop-color="#2d2b45"/>
+                <stop offset="100%" stop-color="#c86d51"/>
+              </linearGradient>
+            </defs>
+            <rect width="640" height="360" fill="url(#cloud-sky)"/>
+            <ellipse cx="200" cy="240" rx="160" ry="60" fill="#201f35" opacity="0.9"/>
+            <ellipse cx="440" cy="210" rx="190" ry="70" fill="#38253b" opacity="0.85"/>
+            <ellipse cx="320" cy="250" rx="140" ry="50" fill="#583145" opacity="0.8"/>
+            <ellipse cx="140" cy="280" rx="180" ry="70" fill="#171826"/>
+            <ellipse cx="480" cy="270" rx="200" ry="80" fill="#1c1622"/>
+          </svg>`;
+
+        case "winter":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#0b1118"/>
+            <path d="M0 240 Q 160 190 320 230 T 640 210 L 640 360 L 0 360 Z" fill="#16222f"/>
+            <polygon points="120,260 150,210 180,260" fill="#0f1922"/>
+            <polygon points="140,240 150,210 160,240" fill="#203345"/>
+            <!-- Cabin -->
+            <rect x="360" y="210" width="80" height="60" fill="#1b1715"/>
+            <polygon points="350,210 400,175 450,210" fill="#29201a"/>
+            <!-- Warm window glow -->
+            <rect x="385" y="225" width="25" height="25" fill="#f59e0b" opacity="0.9"/>
+            <!-- Snow dots -->
+            <circle cx="80" cy="80" r="2" fill="#fff" opacity="0.7"/>
+            <circle cx="210" cy="140" r="2" fill="#fff" opacity="0.8"/>
+            <circle cx="320" cy="90" r="1.5" fill="#fff" opacity="0.6"/>
+            <circle cx="490" cy="120" r="2.5" fill="#fff" opacity="0.7"/>
+            <circle cx="580" cy="70" r="2" fill="#fff" opacity="0.8"/>
+          </svg>`;
+
+        case "space":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#05070b"/>
+            <!-- Star field -->
+            <circle cx="70" cy="50" r="1" fill="#fff" opacity="0.8"/>
+            <circle cx="160" cy="120" r="1.5" fill="#fff" opacity="0.9"/>
+            <circle cx="290" cy="40" r="1" fill="#fff" opacity="0.5"/>
+            <circle cx="450" cy="80" r="1.2" fill="#fff" opacity="0.7"/>
+            <circle cx="580" cy="150" r="1" fill="#fff" opacity="0.6"/>
+            <circle cx="100" cy="280" r="1.5" fill="#fff" opacity="0.8"/>
+            <!-- Orbit lines -->
+            <ellipse cx="320" cy="180" rx="220" ry="85" fill="none" stroke="#232d3b" stroke-width="1.2" stroke-dasharray="4,4"/>
+            <ellipse cx="320" cy="180" rx="140" ry="55" fill="none" stroke="#232d3b" stroke-width="1.2"/>
+            <!-- Sun & Planets -->
+            <circle cx="320" cy="180" r="32" fill="#f59e0b"/>
+            <circle cx="320" cy="180" r="42" fill="#f59e0b" opacity="0.25"/>
+            <circle cx="440" cy="155" r="9" fill="#00d4be"/>
+            <circle cx="190" cy="205" r="14" fill="#3b82f6"/>
+          </svg>`;
+
+        case "synthwave":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="sw-sun" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#ff007a"/>
+                <stop offset="100%" stop-color="#f59e0b"/>
+              </linearGradient>
+            </defs>
+            <rect width="640" height="360" fill="#0c0714"/>
+            <!-- Glowing Sun -->
+            <circle cx="320" cy="160" r="65" fill="url(#sw-sun)"/>
+            <g fill="#0c0714">
+              <rect x="250" y="145" width="140" height="3"/>
+              <rect x="250" y="155" width="140" height="5"/>
+              <rect x="250" y="168" width="140" height="7"/>
+              <rect x="250" y="184" width="140" height="9"/>
+            </g>
+            <!-- Mountains -->
+            <polygon points="0,210 110,165 240,210" fill="#140d21"/>
+            <polygon points="200,210 320,150 440,210" fill="#190e29"/>
+            <polygon points="400,210 520,160 640,210" fill="#140d21"/>
+            <!-- Ground grid with perspective -->
+            <rect x="0" y="210" width="640" height="150" fill="#08040d"/>
+            <g stroke="#00d4be" stroke-width="1.2" opacity="0.6">
+              <line x1="320" y1="210" x2="0" y2="360"/>
+              <line x1="320" y1="210" x2="140" y2="360"/>
+              <line x1="320" y1="210" x2="250" y2="360"/>
+              <line x1="320" y1="210" x2="320" y2="360"/>
+              <line x1="320" y1="210" x2="390" y2="360"/>
+              <line x1="320" y1="210" x2="500" y2="360"/>
+              <line x1="320" y1="210" x2="640" y2="360"/>
+              <line x1="0" y1="225" x2="640" y2="225"/>
+              <line x1="0" y1="245" x2="640" y2="245"/>
+              <line x1="0" y1="275" x2="640" y2="275"/>
+              <line x1="0" y1="315" x2="640" y2="315"/>
+            </g>
+          </svg>`;
+
+        case "ocean":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#040910"/>
+            <!-- Bioluminescent jellyfish -->
+            <g opacity="0.85">
+              <path d="M280 140 C 280 80, 360 80, 360 140 Z" fill="#00d4be" opacity="0.35"/>
+              <path d="M290 140 C 290 95, 350 95, 350 140 Z" fill="#00d4be" opacity="0.7"/>
+              <!-- Tentacles -->
+              <path d="M300 140 Q 290 180 305 230 T 295 280" stroke="#00d4be" stroke-width="2" fill="none"/>
+              <path d="M315 140 Q 325 190 315 240 T 325 290" stroke="#7ee787" stroke-width="1.8" fill="none"/>
+              <path d="M330 140 Q 320 185 335 235 T 325 285" stroke="#00d4be" stroke-width="1.8" fill="none"/>
+              <path d="M340 140 Q 355 180 345 230 T 355 280" stroke="#7ee787" stroke-width="2" fill="none"/>
+            </g>
+            <!-- Ambient particle floating glow -->
+            <circle cx="160" cy="90" r="3" fill="#00d4be" opacity="0.5"/>
+            <circle cx="480" cy="200" r="2.5" fill="#00d4be" opacity="0.6"/>
+            <circle cx="210" cy="260" r="2" fill="#00d4be" opacity="0.4"/>
+            <circle cx="430" cy="110" r="4" fill="#00d4be" opacity="0.3"/>
+          </svg>`;
+
+        case "forest":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#0b1414"/>
+            <!-- Mountain ridge back -->
+            <polygon points="0,210 180,120 380,210 520,140 640,210 640,360 0,360" fill="#102020"/>
+            <!-- Mid fog layer -->
+            <rect x="0" y="190" width="640" height="40" fill="#1b3030" opacity="0.4"/>
+            <!-- Pine silhouettes -->
+            <g fill="#070c0c">
+              <polygon points="60,360 80,230 100,360"/>
+              <polygon points="120,360 145,190 170,360"/>
+              <polygon points="210,360 230,240 250,360"/>
+              <polygon points="310,360 335,180 360,360"/>
+              <polygon points="420,360 445,210 470,360"/>
+              <polygon points="530,360 550,230 570,360"/>
+              <polygon points="580,360 605,195 630,360"/>
+            </g>
+          </svg>`;
+
+        case "alley":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#080a11"/>
+            <!-- Narrow alley perspective -->
+            <polygon points="0,0 200,100 200,360 0,360" fill="#111420"/>
+            <polygon points="640,0 440,100 440,360 640,360" fill="#0d101a"/>
+            <!-- Vertical neon sign -->
+            <rect x="180" y="130" width="12" height="60" fill="#ff007a"/>
+            <rect x="450" y="120" width="10" height="80" fill="#00d4be"/>
+            <!-- Wet asphalt reflection -->
+            <polygon points="200,310 440,310 640,360 0,360" fill="#080910"/>
+            <ellipse cx="260" cy="335" rx="30" ry="6" fill="#ff007a" opacity="0.4"/>
+            <ellipse cx="380" cy="335" rx="35" ry="6" fill="#00d4be" opacity="0.4"/>
+          </svg>`;
+
+        case "desert":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#171110"/>
+            <!-- Minimal dunes -->
+            <path d="M0,230 Q 180,140 360,240 T 640,190 L 640,360 L 0,360 Z" fill="#2d1c16"/>
+            <path d="M0,280 Q 220,200 440,290 T 640,260 L 640,360 L 0,360 Z" fill="#3b251e"/>
+            <circle cx="480" cy="90" r="28" fill="#f59e0b" opacity="0.85"/>
+          </svg>`;
+
+        case "lofi":
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#0b0e14"/>
+            <!-- Window to night city -->
+            <rect x="80" y="40" width="220" height="180" fill="#101524" stroke="#232d3b" stroke-width="4"/>
+            <line x1="190" y1="40" x2="190" y2="220" stroke="#232d3b" stroke-width="3"/>
+            <!-- City lights outside window -->
+            <circle cx="120" cy="110" r="2" fill="#f59e0b" opacity="0.8"/>
+            <circle cx="160" cy="140" r="2" fill="#00d4be" opacity="0.8"/>
+            <circle cx="230" cy="100" r="2" fill="#ff007a" opacity="0.8"/>
+            <!-- Desk and warm lamp -->
+            <rect x="40" y="220" width="560" height="140" fill="#1a1c24"/>
+            <polygon points="460,140 430,220 490,220" fill="#f59e0b" opacity="0.25"/>
+            <circle cx="460" cy="130" r="10" fill="#f59e0b"/>
+          </svg>`;
+
+        case "nebula":
+        default:
+          return `<svg viewBox="0 0 640 360" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <rect width="640" height="360" fill="#05070e"/>
+            <circle cx="260" cy="160" r="110" fill="#6366f1" opacity="0.2" filter="blur(30px)"/>
+            <circle cx="380" cy="190" r="95" fill="#00d4be" opacity="0.18" filter="blur(25px)"/>
+            <circle cx="310" cy="220" r="75" fill="#f59e0b" opacity="0.14" filter="blur(20px)"/>
+            <!-- Stars -->
+            <circle cx="90" cy="70" r="1.2" fill="#fff" opacity="0.9"/>
+            <circle cx="210" cy="110" r="1.5" fill="#fff" opacity="0.8"/>
+            <circle cx="340" cy="80" r="1" fill="#fff" opacity="0.6"/>
+            <circle cx="480" cy="120" r="1.8" fill="#fff" opacity="0.9"/>
+            <circle cx="560" cy="220" r="1.2" fill="#fff" opacity="0.7"/>
+            <circle cx="140" cy="260" r="1.5" fill="#fff" opacity="0.8"/>
+          </svg>`;
+      }
+    }
+
+    // Toolkit Theme Definitions
+    const TOOLKIT_THEMES = {
+      auto: {
+        "--bg-canvas": "#0d1117",
+        "--bg-surface": "#161c24",
+        "--bg-surface-elevated": "#1e2632",
+        "--border-subtle": "#232d3b",
+        "--border-hover": "#334255",
+        "--border-active": "#00d4be",
+        "--border-focus": "#00d4be",
+        "--text-primary": "#e6edf3",
+        "--text-muted": "#8b9bb0",
+        "--accent": "#00d4be",
+        "--accent-cyan": "#00d4be",
+        "--accent-cyan-tint": "rgba(0, 212, 190, 0.12)",
+        "--accent-cyan-glow": "rgba(0, 212, 190, 0.28)",
+        "--radius-card": "8px",
+        "--radius-btn": "6px",
+        "--radius-pill": "20px"
+      },
+      gtk: {
+        // GNOME dark #1e1e1e / #242424, GNOME blue #3584e4, 12px pill radius
+        "--bg-canvas": "#1e1e1e",
+        "--bg-surface": "#242424",
+        "--bg-surface-elevated": "#2f2f2f",
+        "--border-subtle": "#383838",
+        "--border-hover": "#4a4a4a",
+        "--border-active": "#3584e4",
+        "--border-focus": "#3584e4",
+        "--text-primary": "#ffffff",
+        "--text-muted": "#9a9996",
+        "--accent": "#3584e4",
+        "--accent-cyan": "#3584e4",
+        "--accent-cyan-tint": "rgba(53, 132, 228, 0.15)",
+        "--accent-cyan-glow": "rgba(53, 132, 228, 0.35)",
+        "--radius-card": "12px",
+        "--radius-btn": "10px",
+        "--radius-pill": "24px"
+      },
+      qt: {
+        // KDE Plasma dark #232629 / #31363b, Breeze cyan/blue #3daee9, 6px clean radius
+        "--bg-canvas": "#232629",
+        "--bg-surface": "#31363b",
+        "--bg-surface-elevated": "#3a4046",
+        "--border-subtle": "#3e444a",
+        "--border-hover": "#4f565e",
+        "--border-active": "#3daee9",
+        "--border-focus": "#3daee9",
+        "--text-primary": "#fcfcfc",
+        "--text-muted": "#a1a9b1",
+        "--accent": "#3daee9",
+        "--accent-cyan": "#3daee9",
+        "--accent-cyan-tint": "rgba(61, 174, 233, 0.15)",
+        "--accent-cyan-glow": "rgba(61, 174, 233, 0.35)",
+        "--radius-card": "6px",
+        "--radius-btn": "4px",
+        "--radius-pill": "8px"
+      },
+      brave: {
+        // Obsidian #0d1117 / #161c24, Brave Lion Orange #fb542b to #ff7629, 8px radius
+        "--bg-canvas": "#0d1117",
+        "--bg-surface": "#161c24",
+        "--bg-surface-elevated": "#1f2733",
+        "--border-subtle": "#252d3a",
+        "--border-hover": "#384354",
+        "--border-active": "#fb542b",
+        "--border-focus": "#fb542b",
+        "--text-primary": "#f0f6fc",
+        "--text-muted": "#8b949e",
+        "--accent": "#fb542b",
+        "--accent-cyan": "#fb542b",
+        "--accent-cyan-tint": "rgba(251, 84, 43, 0.15)",
+        "--accent-cyan-glow": "rgba(251, 84, 43, 0.35)",
+        "--radius-card": "8px",
+        "--radius-btn": "6px",
+        "--radius-pill": "16px"
+      }
+    };
+
+    // Application State Management
+    class GalleryApp {
+      constructor() {
+        this.wallpapers = [...INITIAL_WALLPAPERS];
+        this.favorites = new Set(["3615154110", "3104928173"]);
+        this.activeId = "3615154110";
+        this.selectedId = "3615154110";
+        this.currentFilter = "all";
+        this.searchQuery = "";
+        this.toolkitTheme = "auto";
+        
+        // Engine configuration options
+        this.engineConfig = {
+          cliTool: "we-run",
+          presentationLayer: "x11-desktop",
+          gpu: "auto",
+          backend: "x11-desktop",
+          output: "eDP-1",
+          fps: 60,
+          preset: "smooth",
+          pauseBattery: false,
+          audio: false,
+          pauseFullscreen: true
+        };
+
+        this.initDOMElements();
+        this.bindEvents();
+        this.initToolkitTheme();
+        this.renderCatalog();
+        this.updateInspector();
+      }
+
+      initDOMElements() {
+        this.dom = {
+          grid: document.getElementById("wallpaper-grid"),
+          inspector: document.getElementById("inspector"),
+          searchInput: document.getElementById("search-input"),
+          filterTabs: document.querySelectorAll(".filter-tab"),
+          countAll: document.getElementById("count-all"),
+          countScene: document.getElementById("count-scene"),
+          countVideo: document.getElementById("count-video"),
+          countFavorites: document.getElementById("count-favorites"),
+          catalogCountLabel: document.getElementById("catalog-count-label"),
+          headerActiveName: document.getElementById("header-active-name"),
+          headerBackend: document.getElementById("header-backend"),
+          headerOutput: document.getElementById("header-output"),
+          headerBattery: document.getElementById("header-battery"),
+          inspectTitle: document.getElementById("inspect-title"),
+          inspectorHero: document.getElementById("inspector-hero"),
+          specId: document.getElementById("spec-id"),
+          specType: document.getElementById("spec-type"),
+          specResolution: document.getElementById("spec-resolution"),
+          specSize: document.getElementById("spec-size"),
+          specAuthor: document.getElementById("spec-author"),
+          specPath: document.getElementById("spec-path"),
+          profileCards: document.querySelectorAll(".profile-card"),
+          labelActiveFps: document.getElementById("label-active-fps"),
+          selectBackend: document.getElementById("select-backend"),
+          selectOutput: document.getElementById("select-output"),
+          sliderFps: document.getElementById("slider-fps"),
+          valFps: document.getElementById("val-fps"),
+          togglePauseBattery: document.getElementById("toggle-pause-battery"),
+          toggleAudio: document.getElementById("toggle-audio"),
+          togglePauseFullscreen: document.getElementById("toggle-pause-fullscreen"),
+          cliCommand: document.getElementById("cli-command"),
+          btnCopyCli: document.getElementById("btn-copy-cli"),
+          copyBtnText: document.getElementById("copy-btn-text"),
+          btnApplyWallpaper: document.getElementById("btn-apply-wallpaper"),
+          btnTestHeadless: document.getElementById("btn-test-headless"),
+          btnCloseInspector: document.getElementById("btn-close-inspector"),
+          jsonFileInput: document.getElementById("json-file-input"),
+          toast: document.getElementById("toast"),
+          toastMessage: document.getElementById("toast-message"),
+          toolkitBtns: document.querySelectorAll(".toolkit-btn"),
+          layerPills: document.querySelectorAll(".layer-pill"),
+          gpuPills: document.querySelectorAll(".gpu-pill"),
+          cliModeBtns: document.querySelectorAll(".cli-mode-btn")
+        };
+      }
+
+      bindEvents() {
+        // Toolkit compatibility switcher
+        this.dom.toolkitBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            this.setToolkitTheme(btn.dataset.toolkit);
+          });
+        });
+
+        // Presentation Layer switcher
+        this.dom.layerPills.forEach((pill) => {
+          pill.addEventListener("click", () => {
+            this.setPresentationLayer(pill.dataset.layer);
+          });
+        });
+
+        // Hardware GPU profile switcher
+        this.dom.gpuPills.forEach((pill) => {
+          pill.addEventListener("click", () => {
+            this.setGpuProfile(pill.dataset.gpu);
+          });
+        });
+
+        // CLI command mode switcher
+        this.dom.cliModeBtns.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            this.setCliMode(btn.dataset.cli);
+          });
+        });
+
+        // Search
+        this.dom.searchInput.addEventListener("input", (e) => {
+          this.searchQuery = e.target.value.toLowerCase().trim();
+          this.renderCatalog();
+        });
+
+        // Filter tabs
+        this.dom.filterTabs.forEach((tab) => {
+          tab.addEventListener("click", () => {
+            this.dom.filterTabs.forEach(t => {
+              t.classList.remove("active");
+              t.setAttribute("aria-selected", "false");
+            });
+            tab.classList.add("active");
+            tab.setAttribute("aria-selected", "true");
+            this.currentFilter = tab.dataset.filter;
+            this.renderCatalog();
+          });
+        });
+
+        // Inspector Close
+        this.dom.btnCloseInspector.addEventListener("click", () => {
+          this.dom.inspector.classList.add("collapsed");
+        });
+
+        // Power profile buttons
+        this.dom.profileCards.forEach((card) => {
+          card.addEventListener("click", () => {
+            const preset = card.dataset.preset;
+            const fps = parseInt(card.dataset.fps, 10);
+            this.setPreset(preset, fps);
+          });
+        });
+
+        // Engine settings
+        this.dom.selectBackend.addEventListener("change", (e) => {
+          this.engineConfig.backend = e.target.value;
+          this.dom.headerBackend.textContent = e.target.value;
+          this.updateCliCommand();
+        });
+
+        this.dom.selectOutput.addEventListener("change", (e) => {
+          this.engineConfig.output = e.target.value;
+          this.dom.headerOutput.textContent = e.target.value ? e.target.value : "All outputs";
+          this.updateCliCommand();
+        });
+
+        this.dom.sliderFps.addEventListener("input", (e) => {
+          const fps = parseInt(e.target.value, 10);
+          this.engineConfig.fps = fps;
+          this.dom.valFps.textContent = fps;
+          this.dom.labelActiveFps.textContent = fps + " FPS";
+          
+          // Unset active preset if custom fps
+          this.dom.profileCards.forEach(c => {
+            if (parseInt(c.dataset.fps, 10) === fps) {
+              c.classList.add("active");
+              this.engineConfig.preset = c.dataset.preset;
+            } else {
+              c.classList.remove("active");
+            }
+          });
+
+          this.updateCliCommand();
+        });
+
+        this.dom.togglePauseBattery.addEventListener("change", (e) => {
+          this.engineConfig.pauseBattery = e.target.checked;
+          this.updateCliCommand();
+        });
+
+        this.dom.toggleAudio.addEventListener("change", (e) => {
+          this.engineConfig.audio = e.target.checked;
+          this.updateCliCommand();
+        });
+
+        this.dom.togglePauseFullscreen.addEventListener("change", (e) => {
+          this.engineConfig.pauseFullscreen = e.target.checked;
+          this.updateCliCommand();
+        });
+
+        // Copy CLI Command
+        this.dom.btnCopyCli.addEventListener("click", () => {
+          const cmd = this.dom.cliCommand.textContent;
+          navigator.clipboard.writeText(cmd).then(() => {
+            this.dom.copyBtnText.textContent = "Copied!";
+            setTimeout(() => {
+              this.dom.copyBtnText.textContent = "Copy command";
+            }, 1800);
+            this.showToast("Command copied to clipboard");
+          }).catch(() => {
+            this.showToast("Copied command");
+          });
+        });
+
+        // Apply Wallpaper Button
+        this.dom.btnApplyWallpaper.addEventListener("click", () => {
+          const current = this.getSelectedWallpaper();
+          if (current) {
+            this.activeId = current.id;
+            this.dom.headerActiveName.textContent = current.title;
+            this.renderCatalog();
+            const cmd = this.dom.cliCommand.textContent;
+            navigator.clipboard.writeText(cmd).catch(() => {});
+            this.showToast(`Applied ${current.title} (command copied)`);
+          }
+        });
+
+        // Test Headless Button
+        this.dom.btnTestHeadless.addEventListener("click", () => {
+          const current = this.getSelectedWallpaper();
+          if (current) {
+            const cmd = `we run ${current.id} --backend headless --frames 30 --screenshot ${current.id}.png`;
+            navigator.clipboard.writeText(cmd).catch(() => {});
+            this.showToast(`Headless test command copied`);
+          }
+        });
+
+        // Load JSON File
+        this.dom.jsonFileInput.addEventListener("change", (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            try {
+              const data = JSON.parse(event.target.result);
+              this.importCatalogJson(data);
+            } catch (err) {
+              alert("Failed to parse JSON file: " + err.message);
+            }
+          };
+          reader.readAsText(file);
+        });
+
+        // Keyboard Shortcuts
+        window.addEventListener("keydown", (e) => {
+          if (e.key === "/" && document.activeElement !== this.dom.searchInput) {
+            e.preventDefault();
+            this.dom.searchInput.focus();
+            this.dom.searchInput.select();
+          } else if (e.key === "Escape") {
+            if (document.activeElement === this.dom.searchInput) {
+              this.dom.searchInput.blur();
+            } else {
+              this.dom.inspector.classList.add("collapsed");
+            }
+          }
+        });
+      }
+
+      setPreset(preset, fps) {
+        this.engineConfig.preset = preset;
+        this.engineConfig.fps = fps;
+        this.dom.sliderFps.value = fps;
+        this.dom.valFps.textContent = fps;
+        this.dom.labelActiveFps.textContent = fps + " FPS";
+
+        this.dom.profileCards.forEach(c => {
+          if (c.dataset.preset === preset) {
+            c.classList.add("active");
+          } else {
+            c.classList.remove("active");
+          }
+        });
+
+        if (preset === "battery") {
+          this.dom.togglePauseBattery.checked = true;
+          this.engineConfig.pauseBattery = true;
+        }
+
+        this.updateCliCommand();
+      }
+
+      getSelectedWallpaper() {
+        return this.wallpapers.find(w => w.id === this.selectedId) || this.wallpapers[0];
+      }
+
+      importCatalogJson(data) {
+        if (!Array.isArray(data)) return;
+        const mapped = data.map((item, idx) => ({
+          id: String(item.id || "pkg-" + idx),
+          title: item.title || "Untitled Wallpaper",
+          type: (item.type || "scene").toLowerCase(),
+          resolution: item.resolution || "1920×1080",
+          size: item.size || "Unknown",
+          author: item.author || "Steam Workshop",
+          path: item.path || "",
+          tags: item.tags || [item.type || "scene"],
+          artTheme: (item.type === "video" ? "clouds" : "cyberpunk"),
+          description: item.description || `Wallpaper Engine asset located at ${item.path || "VFS"}`
+        }));
+
+        this.wallpapers = mapped;
+        if (mapped.length > 0) {
+          this.selectedId = mapped[0].id;
+          this.activeId = mapped[0].id;
+          this.dom.headerActiveName.textContent = mapped[0].title;
+        }
+        this.renderCatalog();
+        this.updateInspector();
+        this.showToast(`Imported ${mapped.length} wallpapers`);
+      }
+
+      filterWallpapers() {
+        return this.wallpapers.filter(item => {
+          // Type filter
+          if (this.currentFilter === "scene" && item.type !== "scene") return false;
+          if (this.currentFilter === "video" && item.type !== "video") return false;
+          if (this.currentFilter === "favorites" && !this.favorites.has(item.id)) return false;
+
+          // Search query
+          if (this.searchQuery) {
+            const hay = (item.title + " " + item.id + " " + item.author + " " + item.tags.join(" ")).toLowerCase();
+            if (!hay.includes(this.searchQuery)) return false;
+          }
+
+          return true;
+        });
+      }
+
+      renderCatalog() {
+        const filtered = this.filterWallpapers();
+        
+        // Update tab counts
+        this.dom.countAll.textContent = this.wallpapers.length;
+        this.dom.countScene.textContent = this.wallpapers.filter(w => w.type === "scene").length;
+        this.dom.countVideo.textContent = this.wallpapers.filter(w => w.type === "video").length;
+        this.dom.countFavorites.textContent = this.favorites.size;
+        this.dom.catalogCountLabel.textContent = `${filtered.length} wallpaper${filtered.length === 1 ? "" : "s"} found`;
+
+        this.dom.grid.innerHTML = "";
+
+        if (filtered.length === 0) {
+          this.dom.grid.innerHTML = `
+            <div style="grid-column: 1 / -1; padding: 48px; text-align: center; color: var(--text-muted);">
+              <p style="font-size: 15px; margin-bottom: 8px;">No wallpapers match your query</p>
+              <p style="font-size: 12px; font-family: var(--font-mono);">Try clearing the search or filter</p>
+            </div>
+          `;
+          return;
+        }
+
+        filtered.forEach(item => {
+          const isSelected = item.id === this.selectedId;
+          const isActive = item.id === this.activeId;
+          const isFav = this.favorites.has(item.id);
+
+          const card = document.createElement("article");
+          card.className = `wallpaper-card${isSelected ? " selected" : ""}${isActive ? " active-wallpaper" : ""}`;
+          card.dataset.id = item.id;
+          card.tabIndex = 0;
+
+          card.innerHTML = `
+            <div class="card-preview-box">
+              <div class="card-preview-art">
+                ${renderArtworkSvg(item.artTheme, item.title)}
+              </div>
+              <div class="preview-overlay"></div>
+              <div class="card-badges-top">
+                <div class="badge-left">
+                  <span class="badge-type ${item.type}">${item.type}</span>
+                  <span class="badge-res">${item.resolution.includes("3840") ? "4K" : "1080p"}</span>
+                </div>
+                <button class="btn-fav${isFav ? " active" : ""}" title="Favorite" aria-label="Favorite">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="${isFav ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                </button>
+              </div>
+              ${isActive ? `
+                <div class="active-strip">
+                  <span class="live-dot" style="width:5px; height:5px;"></span>
+                  <span>Active</span>
+                </div>
+              ` : ""}
+            </div>
+            <div class="card-content">
+              <div class="card-title" title="${item.title}">${item.title}</div>
+              <div class="card-sub">
+                <span>${item.id}</span>
+                <span>${item.size}</span>
+              </div>
+            </div>
+          `;
+
+          // Card click to select
+          card.addEventListener("click", (e) => {
+            if (e.target.closest(".btn-fav")) {
+              e.stopPropagation();
+              this.toggleFavorite(item.id);
+              return;
+            }
+            this.selectWallpaper(item.id);
+          });
+
+          // Enter key to select
+          card.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              this.selectWallpaper(item.id);
+            }
+          });
+
+          this.dom.grid.appendChild(card);
+        });
+      }
+
+      selectWallpaper(id) {
+        this.selectedId = id;
+        this.dom.inspector.classList.remove("collapsed");
+
+        // Update card visual selection
+        document.querySelectorAll(".wallpaper-card").forEach(c => {
+          c.classList.toggle("selected", c.dataset.id === id);
+        });
+
+        this.updateInspector();
+      }
+
+      toggleFavorite(id) {
+        if (this.favorites.has(id)) {
+          this.favorites.delete(id);
+        } else {
+          this.favorites.add(id);
+        }
+        this.renderCatalog();
+      }
+
+      updateInspector() {
+        const item = this.getSelectedWallpaper();
+        if (!item) return;
+
+        this.dom.inspectTitle.textContent = item.title;
+        this.dom.inspectorHero.innerHTML = renderArtworkSvg(item.artTheme, item.title);
+        this.dom.specId.textContent = item.id;
+        this.dom.specType.textContent = item.type.toUpperCase();
+        this.dom.specResolution.textContent = item.resolution;
+        this.dom.specSize.textContent = item.size;
+        this.dom.specAuthor.textContent = item.author;
+        this.dom.specPath.textContent = item.path;
+
+        this.updateCliCommand();
+      }
+
+      initToolkitTheme() {
+        let saved = "auto";
+        try {
+          saved = localStorage.getItem("we_toolkit_theme") || "auto";
+        } catch (e) {}
+        this.setToolkitTheme(saved, true);
+      }
+
+      setToolkitTheme(themeKey, silent = false) {
+        const root = document.documentElement;
+        const theme = TOOLKIT_THEMES[themeKey] || TOOLKIT_THEMES.auto;
+        for (const [prop, val] of Object.entries(theme)) {
+          root.style.setProperty(prop, val);
+        }
+        this.toolkitTheme = themeKey;
+        try {
+          localStorage.setItem("we_toolkit_theme", themeKey);
+        } catch (e) {}
+
+        this.dom.toolkitBtns.forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.toolkit === themeKey);
+        });
+
+        if (!silent) {
+          const names = {
+            auto: "Auto / Sistema",
+            gtk: "GTK / Libadwaita",
+            qt: "Qt / Breeze",
+            brave: "Brave / Obsidian"
+          };
+          this.showToast(`Toolkit: ${names[themeKey] || themeKey}`);
+        }
+      }
+
+      setPresentationLayer(layer) {
+        this.engineConfig.presentationLayer = layer;
+        this.dom.layerPills.forEach(p => {
+          p.classList.toggle("active", p.dataset.layer === layer);
+        });
+
+        if (layer === "x11-desktop") {
+          this.engineConfig.backend = "x11-desktop";
+          this.dom.selectBackend.value = "x11-desktop";
+          this.dom.headerBackend.textContent = "x11-desktop";
+        } else if (layer === "x11-root") {
+          this.engineConfig.backend = "x11-root";
+          this.dom.selectBackend.value = "x11-root";
+          this.dom.headerBackend.textContent = "x11-root";
+        } else if (layer === "wayland-background") {
+          this.engineConfig.backend = "wayland";
+          this.dom.selectBackend.value = "wayland";
+          this.dom.headerBackend.textContent = "wayland (bg)";
+        } else if (layer === "wayland-bottom") {
+          this.engineConfig.backend = "wayland";
+          this.dom.selectBackend.value = "wayland";
+          this.dom.headerBackend.textContent = "wayland (bottom)";
+        }
+
+        this.updateCliCommand();
+      }
+
+      setGpuProfile(gpu) {
+        this.engineConfig.gpu = gpu;
+        this.dom.gpuPills.forEach(p => {
+          p.classList.toggle("active", p.dataset.gpu === gpu);
+        });
+        const labels = {
+          intel: "GPU: Intel iGPU (Batería)",
+          nvidia: "GPU: dGPU Rendimiento",
+          auto: "GPU: Auto"
+        };
+        this.showToast(labels[gpu] || `GPU: ${gpu}`);
+        this.updateCliCommand();
+      }
+
+      setCliMode(mode) {
+        this.engineConfig.cliTool = mode;
+        this.dom.cliModeBtns.forEach(b => {
+          b.classList.toggle("active", b.dataset.cli === mode);
+        });
+        this.updateCliCommand();
+      }
+
+      updateCliCommand() {
+        const item = this.getSelectedWallpaper();
+        if (!item) return;
+
+        const isWeWallpaper = this.engineConfig.cliTool === "we-wallpaper";
+
+        if (isWeWallpaper) {
+          const envs = [];
+          if (this.engineConfig.gpu && this.engineConfig.gpu !== "auto") {
+            envs.push(`WE_GPU=${this.engineConfig.gpu}`);
+          }
+
+          if (this.engineConfig.presentationLayer === "wayland-background") {
+            envs.push("WE_BACKEND=sway WE_LAYER=background");
+          } else if (this.engineConfig.presentationLayer === "wayland-bottom") {
+            envs.push("WE_BACKEND=sway WE_LAYER=bottom");
+          } else if (this.engineConfig.presentationLayer === "x11-root") {
+            envs.push("WE_BACKEND=x11");
+          }
+
+          const prefix = envs.length > 0 ? envs.join(" ") + " " : "";
+          this.dom.cliCommand.textContent = `${prefix}we-wallpaper apply-id ${item.id}`;
+        } else {
+          const parts = [];
+
+          if (this.engineConfig.gpu && this.engineConfig.gpu !== "auto") {
+            parts.push(`WE_GPU=${this.engineConfig.gpu}`);
+          }
+
+          parts.push("we run", item.id);
+
+          let backendFlag = "x11-desktop";
+          if (this.engineConfig.presentationLayer === "x11-desktop") {
+            backendFlag = "x11-desktop";
+          } else if (this.engineConfig.presentationLayer === "x11-root") {
+            backendFlag = "x11-root";
+          } else if (this.engineConfig.presentationLayer && this.engineConfig.presentationLayer.startsWith("wayland")) {
+            backendFlag = "wayland";
+          } else if (this.engineConfig.backend && this.engineConfig.backend !== "auto") {
+            backendFlag = this.engineConfig.backend;
+          }
+
+          parts.push(`--backend ${backendFlag}`);
+
+          if (this.engineConfig.output) {
+            parts.push(`--output ${this.engineConfig.output}`);
+          }
+
+          if (this.engineConfig.fps !== 60) {
+            parts.push(`--fps ${this.engineConfig.fps}`);
+          }
+
+          if (this.engineConfig.pauseBattery) {
+            parts.push("--pause-on-battery");
+          }
+
+          if (!this.engineConfig.pauseFullscreen) {
+            parts.push("--no-pause-fullscreen");
+          }
+
+          if (this.engineConfig.audio) {
+            parts.push("--audio");
+          }
+
+          this.dom.cliCommand.textContent = parts.join(" ");
+        }
+      }
+
+      showToast(message) {
+        this.dom.toastMessage.textContent = message;
+        this.dom.toast.classList.add("show");
+        clearTimeout(this._toastTimeout);
+        this._toastTimeout = setTimeout(() => {
+          this.dom.toast.classList.remove("show");
+        }, 2200);
+      }
+    }
+
+    // Launch application on DOM readiness
+    document.addEventListener("DOMContentLoaded", () => {
+      window.app = new GalleryApp();
+    });
+  </script>
+</body>
+</html>

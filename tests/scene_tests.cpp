@@ -104,6 +104,35 @@ void append_magic (std::vector<std::byte>& output, std::string_view value) {
     return bytes;
 }
 
+[[nodiscard]] std::vector<std::byte>
+make_rg88_texture (int width, int height, std::span<const std::uint8_t> rg, std::uint32_t flags = 0) {
+    std::vector<std::byte> bytes;
+    append_magic (bytes, "TEXV0005");
+    append_magic (bytes, "TEXI0001");
+    append_u32 (bytes, 8); // format_rg88
+    append_u32 (bytes, flags);
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+    append_u32 (bytes, 0);
+
+    append_magic (bytes, "TEXB0003");
+    append_u32 (bytes, 1);
+    append_u32 (bytes, 0);
+    append_u32 (bytes, 1);
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+    append_u32 (bytes, 0);
+    append_u32 (bytes, static_cast<std::uint32_t> (rg.size ()));
+    append_u32 (bytes, static_cast<std::uint32_t> (rg.size ()));
+
+    for (const auto val : rg) {
+	bytes.push_back (static_cast<std::byte> (val));
+    }
+    return bytes;
+}
+
 void write_project (const std::filesystem::path& root, std::string_view texture_name = "textures/quad.tex") {
     we::test::write_text (
 	root / "project.json", R"({"title":"Test Scene","type":"scene","file":"scene.json","workshopid":1234})"
@@ -289,6 +318,36 @@ TEST (texture_decodes_dxt1_blocks) {
     CHECK (texture->rgba[2] < 40);
 }
 
+TEST (texture_decodes_rg88_standard) {
+    const std::array<std::uint8_t, 2> rg = { 120, 200 };
+    const auto bytes = make_rg88_texture (1, 1, rg, 0);
+
+    auto texture = scene::decode_texture (bytes);
+    CHECK (texture.has_value ());
+    CHECK_EQ (texture->width, 1);
+    CHECK_EQ (texture->height, 1);
+    CHECK_EQ (texture->rgba.size (), std::size_t { 4 });
+    CHECK_EQ (texture->rgba[0], std::uint8_t { 120 });
+    CHECK_EQ (texture->rgba[1], std::uint8_t { 200 });
+    CHECK_EQ (texture->rgba[2], std::uint8_t { 0 });
+    CHECK_EQ (texture->rgba[3], std::uint8_t { 255 });
+}
+
+TEST (texture_decodes_rg88_alpha_priority) {
+    const std::array<std::uint8_t, 2> rg = { 120, 200 };
+    const auto bytes = make_rg88_texture (1, 1, rg, 524288);
+
+    auto texture = scene::decode_texture (bytes);
+    CHECK (texture.has_value ());
+    CHECK_EQ (texture->width, 1);
+    CHECK_EQ (texture->height, 1);
+    CHECK_EQ (texture->rgba.size (), std::size_t { 4 });
+    CHECK_EQ (texture->rgba[0], std::uint8_t { 120 });
+    CHECK_EQ (texture->rgba[1], std::uint8_t { 120 });
+    CHECK_EQ (texture->rgba[2], std::uint8_t { 120 });
+    CHECK_EQ (texture->rgba[3], std::uint8_t { 200 });
+}
+
 TEST (texture_rejects_truncated_payloads) {
     auto bytes = make_argb_texture (2, 2, std::array<std::uint8_t, 16> {});
     bytes.resize (bytes.size () - 3);
@@ -425,12 +484,12 @@ TEST (scene_renderer_draws_image_layers_headless) {
 
 TEST (scene_layer_origin_uses_scene_coordinates) {
     we::test::TempDir temp;
-    write_transform_layer (temp.path (), "60 70 0", "1 1 1", "0 0 0", "20 20", "textures/white.tex");
+    write_transform_layer (temp.path (), "60 30 0", "1 1 1", "0 0 0", "20 20", "textures/white.tex");
 
     const std::array<std::uint8_t, 4> white = { 255, 255, 255, 255 };
     we::test::write_bytes (temp / "textures/white.tex", make_argb_texture (1, 1, white));
 
-    // 20x20 quad centred on scene coordinate (60, 70): scene y grows upward.
+    // 20x20 quad centred on scene coordinate (60, 30): scene y grows downward.
     const auto inside = render_scene_pixel (temp.path (), 100, 60, 30);
     CHECK (inside[0] > 200);
     CHECK (inside[1] > 200);

@@ -29,6 +29,8 @@ namespace {
     constexpr std::uint32_t format_bc7 = 12;
     constexpr std::uint32_t format_free_image_png = 13;
 
+    constexpr std::uint32_t texture_flag_alpha_channel_priority = 524288U; // 0x80000
+
     class Cursor {
     public:
 	explicit Cursor (std::span<const std::byte> data) : data_ (data) { }
@@ -205,8 +207,9 @@ namespace {
 	return output;
     }
 
-    std::expected<std::vector<std::uint8_t>, core::Error>
-    decode_uncompressed (std::span<const std::byte> input, int width, int height, std::uint32_t format) {
+    std::expected<std::vector<std::uint8_t>, core::Error> decode_uncompressed (
+	std::span<const std::byte> input, int width, int height, std::uint32_t format, std::uint32_t flags
+    ) {
 	const auto pixels = static_cast<std::size_t> (width) * static_cast<std::size_t> (height);
 	std::vector<std::uint8_t> output (pixels * 4U);
 	const auto* source = reinterpret_cast<const std::uint8_t*> (input.data ());
@@ -278,11 +281,20 @@ namespace {
 			return core::fail (core::ErrorCode::malformed_data, "RG88 texture is truncated");
 		    }
 
+		    const bool alpha_priority = (flags & texture_flag_alpha_channel_priority) != 0;
+
 		    for (std::size_t index = 0; index < pixels; ++index) {
-			output[index * 4U + 0] = source[index * 2U + 0];
-			output[index * 4U + 1] = source[index * 2U + 0];
-			output[index * 4U + 2] = source[index * 2U + 0];
-			output[index * 4U + 3] = source[index * 2U + 1];
+			if (alpha_priority) {
+			    output[index * 4U + 0] = source[index * 2U + 0];
+			    output[index * 4U + 1] = source[index * 2U + 0];
+			    output[index * 4U + 2] = source[index * 2U + 0];
+			    output[index * 4U + 3] = source[index * 2U + 1];
+			} else {
+			    output[index * 4U + 0] = source[index * 2U + 0];
+			    output[index * 4U + 1] = source[index * 2U + 1];
+			    output[index * 4U + 2] = 0;
+			    output[index * 4U + 3] = 255;
+			}
 		    }
 		    break;
 		}
@@ -480,7 +492,7 @@ std::expected<TextureData, core::Error> decode_texture (std::span<const std::byt
 	return texture;
     }
 
-    auto rgba = decode_uncompressed (span, texture.width, texture.height, texture.format);
+    auto rgba = decode_uncompressed (span, texture.width, texture.height, texture.format, texture.flags);
 
     if (!rgba && rgba.error ().code == core::ErrorCode::unsupported) {
 	rgba = decode_blocks (span, texture.width, texture.height, texture.format);

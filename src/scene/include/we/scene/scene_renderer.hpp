@@ -13,6 +13,7 @@
 #include "we/core/error.hpp"
 #include "we/core/math.hpp"
 #include "we/gfx/framebuffer.hpp"
+#include "we/gfx/gl.hpp"
 #include "we/gfx/renderer.hpp"
 #include "we/gfx/shader.hpp"
 #include "we/scene/asset_container.hpp"
@@ -69,8 +70,34 @@ struct ParticleInstance {
     } oscillate_alpha {};
 };
 
+enum class EmitterType : std::uint8_t {
+    box_random,
+    sphere_random,
+};
+
+enum class InitializerType : std::uint8_t {
+    unknown,
+    lifetime_random,
+    size_random,
+    alpha_random,
+    color_random,
+    velocity_random,
+    rotation_random,
+    angular_velocity_random,
+};
+
+enum class OperatorType : std::uint8_t {
+    unknown,
+    movement,
+    alpha_fade,
+    oscillate_alpha,
+    size_change,
+    oscillate_position,
+};
+
 struct ParticleEmitterDef {
     std::string name;
+    EmitterType type = EmitterType::box_random;
     core::Vec3 origin {};
     core::Vec3 distance_min {};
     core::Vec3 distance_max {};
@@ -84,6 +111,7 @@ struct ParticleEmitterDef {
 
 struct ParticleInitializerDef {
     std::string name;
+    InitializerType type = InitializerType::unknown;
     float min_val = 0.0F;
     float max_val = 0.0F;
     float exponent = 1.0F;
@@ -93,6 +121,7 @@ struct ParticleInitializerDef {
 
 struct ParticleOperatorDef {
     std::string name;
+    OperatorType type = OperatorType::unknown;
     core::Vec3 gravity {};
     float drag = 0.0F;
     float fade_in_time = 0.0F;
@@ -146,11 +175,11 @@ struct ParticleSystemState {
 class SceneRenderer {
 public:
     SceneRenderer () = default;
-    ~SceneRenderer ();
+    ~SceneRenderer () = default;
     SceneRenderer (const SceneRenderer&) = delete;
     SceneRenderer& operator= (const SceneRenderer&) = delete;
-    SceneRenderer (SceneRenderer&& other) noexcept;
-    SceneRenderer& operator= (SceneRenderer&& other) noexcept;
+    SceneRenderer (SceneRenderer&& other) noexcept = default;
+    SceneRenderer& operator= (SceneRenderer&& other) noexcept = default;
 
     // Requires a current OpenGL context: textures are uploaded here.
     [[nodiscard]] static std::expected<SceneRenderer, core::Error>
@@ -235,8 +264,8 @@ private:
     mutable std::unordered_map<std::string, gfx::Framebuffer> fbos_;
     std::vector<CompiledPass> bloom_passes_;
     gfx::Shader blit_shader_;
-    GLuint quad_vao_ = 0;
-    GLuint quad_vbo_ = 0;
+    gfx::GlVertexArray quad_vao_;
+    gfx::GlBuffer quad_vbo_;
     mutable std::chrono::steady_clock::time_point last_render_time_ { std::chrono::steady_clock::now () };
     mutable std::vector<ParticleSystemState> particle_systems_;
 };

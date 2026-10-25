@@ -50,6 +50,8 @@ Scope {
     property string powerIgnoreAppid: ""
     property bool powerFullscreenPause: true
     property string powerHwdec: "auto"
+    property string toolkitTheme: "auto"
+    property string gpuTarget: "auto"
     property string libraryPath: (Quickshell.env("HOME") || "") + "/.config/dwm-titus/gallery-library.json"
 
     readonly property var categories: ["anime", "nature", "sci-fi", "cyberpunk", "gaming", "minimalist"]
@@ -494,6 +496,8 @@ Scope {
     readonly property var idleMinSteps: [0, 5, 10, 15, 30, 60]
     readonly property var hwdecSteps: ["auto", "vaapi-copy", "vaapi", "nvdec", "no"]
     readonly property var layerSteps: ["background", "bottom", "top", "overlay"]
+    readonly property var toolkitThemeSteps: ["auto", "gtk", "qt", "brave"]
+    readonly property var gpuTargetSteps: ["auto", "intel", "nvidia"]
 
     function acFpsLabel() : string {
         return root.powerAcFps <= 0 ? "auto" : String(root.powerAcFps);
@@ -560,6 +564,41 @@ Scope {
         root.powerHwdec = root.hwdecSteps[i];
     }
 
+    function cycleToolkitTheme() : void {
+        let i = root.toolkitThemeSteps.indexOf(root.toolkitTheme);
+        if (i === -1) {
+            i = 0;
+        }
+        i = (i + 1) % root.toolkitThemeSteps.length;
+        root.toolkitTheme = root.toolkitThemeSteps[i];
+    }
+
+    function toolkitThemeLabel() : string {
+        switch (root.toolkitTheme) {
+        case "gtk": return "GTK / Libadwaita";
+        case "qt": return "Qt / Breeze";
+        case "brave": return "Brave / Obsidian";
+        default: return "Auto / Sistema";
+        }
+    }
+
+    function cycleGpuTarget() : void {
+        let i = root.gpuTargetSteps.indexOf(root.gpuTarget);
+        if (i === -1) {
+            i = 0;
+        }
+        i = (i + 1) % root.gpuTargetSteps.length;
+        root.gpuTarget = root.gpuTargetSteps[i];
+    }
+
+    function gpuTargetLabel() : string {
+        switch (root.gpuTarget) {
+        case "intel": return "Intel iGPU (Batería)";
+        case "nvidia": return "dGPU Rendimiento";
+        default: return "Auto";
+        }
+    }
+
     function applyPower() : void {
         const args = [
             "we-wallpaper", "power-set",
@@ -573,7 +612,9 @@ Scope {
             "WE_PAUSE_ACTIVE_ONLY=" + (root.powerPauseActiveOnly ? "1" : "0"),
             "WE_PAUSE_IGNORE_APPID=" + root.powerIgnoreAppid,
             "WE_NO_FULLSCREEN_PAUSE=" + (root.powerFullscreenPause ? "0" : "1"),
-            "WE_HWDEC=" + root.powerHwdec
+            "WE_HWDEC=" + root.powerHwdec,
+            "WE_TOOLKIT_THEME=" + root.toolkitTheme,
+            "WE_GPU=" + root.gpuTarget
         ];
         root.status = "guardando energía...";
         powerSaveProcess.command = args;
@@ -674,6 +715,10 @@ Scope {
                         root.powerFullscreenPause = (v !== "1");
                     } else if (k === "WE_HWDEC") {
                         root.powerHwdec = (v === "") ? "auto" : v;
+                    } else if (k === "WE_TOOLKIT_THEME") {
+                        root.toolkitTheme = (v === "gtk" || v === "qt" || v === "brave") ? v : "auto";
+                    } else if (k === "WE_GPU") {
+                        root.gpuTarget = (v === "intel" || v === "nvidia") ? v : "auto";
                     }
                 }
 

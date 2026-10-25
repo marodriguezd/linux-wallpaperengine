@@ -1,6 +1,7 @@
 #include "we/scene/scene_renderer.hpp"
 
 #include "we/core/log.hpp"
+#include "we/core/text.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -26,11 +27,11 @@ namespace {
 	return { value.x * cosine - value.y * sine, value.x * sine + value.y * cosine };
     }
 
-    // scene.json places objects in a centered space where y grows upward from the
-    // bottom of the canvas. The renderer also draws in a centered y-up space.
+    // Wallpaper Engine scenes place objects in a top-left origin space with y growing downward.
+    // The renderer draws in a centered y-up space, so flip y and center x and y.
     core::Vec2 scene_to_world (core::Vec2 point, int scene_width, int scene_height) {
 	return { point.x - static_cast<float> (scene_width) * 0.5F,
-		 point.y - static_cast<float> (scene_height) * 0.5F };
+		 static_cast<float> (scene_height) * 0.5F - point.y };
     }
 
     gfx::BlendMode parse_blend (std::string_view value) {
@@ -170,19 +171,17 @@ namespace {
 	    if (trimmed.starts_with ("// [COMBO]")) {
 		const std::size_t brace = trimmed.find ('{');
 		if (brace != std::string_view::npos) {
-		    try {
-			auto cj = nlohmann::json::parse (trimmed.substr (brace));
-			if (cj.contains ("combo") && cj["combo"].is_string ()) {
-			    const std::string cname = cj["combo"].get<std::string> ();
-			    int def_val = 0;
-			    if (cj.contains ("default") && cj["default"].is_number ()) {
-				def_val = cj["default"].get<int> ();
-			    }
-			    if (!combos.contains (cname)) {
-				combos[cname] = def_val;
-			    }
+		    auto cj = nlohmann::json::parse (trimmed.substr (brace), nullptr, false);
+		    if (!cj.is_discarded () && cj.contains ("combo") && cj["combo"].is_string ()) {
+			const std::string cname = cj["combo"].get<std::string> ();
+			int def_val = 0;
+			if (cj.contains ("default") && cj["default"].is_number ()) {
+			    def_val = cj["default"].get<int> ();
 			}
-		    } catch (...) { }
+			if (!combos.contains (cname)) {
+			    combos[cname] = def_val;
+			}
+		    }
 		}
 		continue;
 	    }
@@ -208,8 +207,8 @@ namespace {
 			    uniform_types[name] = type;
 
 			    if (brace != std::string_view::npos) {
-				try {
-				    auto uj = nlohmann::json::parse (trimmed.substr (brace));
+				auto uj = nlohmann::json::parse (trimmed.substr (brace), nullptr, false);
+				if (!uj.is_discarded ()) {
 				    if (uj.contains ("material") && uj["material"].is_string ()) {
 					uniform_mat_keys[name] = uj["material"].get<std::string> ();
 				    }
@@ -228,7 +227,7 @@ namespace {
 					    combos[cname] = 0;
 					}
 				    }
-				} catch (...) { }
+				}
 			    }
 			}
 		    }
@@ -263,9 +262,9 @@ namespace {
 	    }
 
 	    if (type == "float") {
-		try {
-		    pass.float_uniforms[name] = std::stof (raw_val);
-		} catch (...) { }
+		if (const auto val = core::parse_float (raw_val)) {
+		    pass.float_uniforms[name] = *val;
+		}
 	    } else if (type == "vec2") {
 		std::istringstream ss (raw_val);
 		float x = 0.0F;
@@ -291,9 +290,9 @@ namespace {
 		    pass.vec4_uniforms[name] = core::Vec4 { x, y, z, w };
 		}
 	    } else if (type == "int") {
-		try {
-		    pass.int_uniforms[name] = std::stoi (raw_val);
-		} catch (...) { }
+		if (const auto val = core::parse_int (raw_val)) {
+		    pass.int_uniforms[name] = *val;
+		}
 	    }
 	}
     }
@@ -458,9 +457,9 @@ namespace {
 	    }
 	}
 	if (it->is_string ()) {
-	    try {
-		return std::stof (it->get<std::string> ());
-	    } catch (...) { }
+	    if (const auto val = core::parse_float (it->get<std::string_view> ())) {
+		return *val;
+	    }
 	}
 	return fallback;
     }
@@ -559,7 +558,7 @@ namespace {
 } // namespace
 
 void ParticleSystemState::spawn_particle (ParticleInstance& p, const ParticleEmitterDef& emitter) {
-    if (emitter.name == "sphererandom") {
+    if (emitter.type == EmitterType::sphere_random) {
 	const float angle = random_range (this->rng, 0.0F, 6.2831853F);
 	const float min_r = std::abs (emitter.distance_min.x);
 	const float max_r = std::max (std::abs (emitter.distance_max.x), min_r + 0.001F);
@@ -628,31 +627,48 @@ void ParticleSystemState::spawn_particle (ParticleInstance& p, const ParticleEmi
     p.oscillate_alpha = {};
 
     for (const auto& init : this->initializers) {
-	if (init.name == "lifetimerandom") {
-	    p.lifetime = random_range (this->rng, init.min_val, init.max_val) * this->instance_override.lifetime;
-	} else if (init.name == "sizerandom") {
-	    const float t = std::pow (random_range (this->rng, 0.0F, 1.0F), init.exponent);
-	    p.size = (init.min_val + t * (init.max_val - init.min_val)) * this->instance_override.size;
-	} else if (init.name == "alpharandom") {
-	    p.alpha = random_range (this->rng, init.min_val, init.max_val) * this->instance_override.alpha;
-	} else if (init.name == "colorrandom") {
-	    float r = random_range (this->rng, init.min_vec.x, init.max_vec.x);
-	    float g = random_range (this->rng, init.min_vec.y, init.max_vec.y);
-	    float b = random_range (this->rng, init.min_vec.z, init.max_vec.z);
-	    if (r > 1.0F || g > 1.0F || b > 1.0F) {
-		r /= 255.0F;
-		g /= 255.0F;
-		b /= 255.0F;
-	    }
-	    p.color = { p.color.x * r, p.color.y * g, p.color.z * b };
-	} else if (init.name == "velocityrandom") {
-	    p.velocity.x += random_range (this->rng, init.min_vec.x, init.max_vec.x) * this->instance_override.speed;
-	    p.velocity.y += random_range (this->rng, init.min_vec.y, init.max_vec.y) * this->instance_override.speed;
-	    p.velocity.z += random_range (this->rng, init.min_vec.z, init.max_vec.z) * this->instance_override.speed;
-	} else if (init.name == "rotationrandom") {
-	    p.rotation.z = random_range (this->rng, init.min_vec.z, init.max_vec.z);
-	} else if (init.name == "angularvelocityrandom") {
-	    p.angular_velocity.z = random_range (this->rng, init.min_vec.z, init.max_vec.z);
+	switch (init.type) {
+	    case InitializerType::lifetime_random:
+		p.lifetime = random_range (this->rng, init.min_val, init.max_val) * this->instance_override.lifetime;
+		break;
+	    case InitializerType::size_random:
+		{
+		    const float t = std::pow (random_range (this->rng, 0.0F, 1.0F), init.exponent);
+		    p.size = (init.min_val + t * (init.max_val - init.min_val)) * this->instance_override.size;
+		    break;
+		}
+	    case InitializerType::alpha_random:
+		p.alpha = random_range (this->rng, init.min_val, init.max_val) * this->instance_override.alpha;
+		break;
+	    case InitializerType::color_random:
+		{
+		    float r = random_range (this->rng, init.min_vec.x, init.max_vec.x);
+		    float g = random_range (this->rng, init.min_vec.y, init.max_vec.y);
+		    float b = random_range (this->rng, init.min_vec.z, init.max_vec.z);
+		    if (r > 1.0F || g > 1.0F || b > 1.0F) {
+			r /= 255.0F;
+			g /= 255.0F;
+			b /= 255.0F;
+		    }
+		    p.color = { p.color.x * r, p.color.y * g, p.color.z * b };
+		    break;
+		}
+	    case InitializerType::velocity_random:
+		p.velocity.x
+		    += random_range (this->rng, init.min_vec.x, init.max_vec.x) * this->instance_override.speed;
+		p.velocity.y
+		    += random_range (this->rng, init.min_vec.y, init.max_vec.y) * this->instance_override.speed;
+		p.velocity.z
+		    += random_range (this->rng, init.min_vec.z, init.max_vec.z) * this->instance_override.speed;
+		break;
+	    case InitializerType::rotation_random:
+		p.rotation.z = random_range (this->rng, init.min_vec.z, init.max_vec.z);
+		break;
+	    case InitializerType::angular_velocity_random:
+		p.angular_velocity.z = random_range (this->rng, init.min_vec.z, init.max_vec.z);
+		break;
+	    case InitializerType::unknown:
+		break;
 	}
     }
 
@@ -721,62 +737,80 @@ void ParticleSystemState::update (float dt, float /*current_time*/) {
 	p.rotation.z += p.angular_velocity.z * dt;
 
 	for (const auto& op : this->operators) {
-	    if (op.name == "movement") {
-		p.position.x += p.velocity.x * dt;
-		p.position.y += p.velocity.y * dt;
-		p.position.z += p.velocity.z * dt;
+	    switch (op.type) {
+		case OperatorType::movement:
+		    p.position.x += p.velocity.x * dt;
+		    p.position.y += p.velocity.y * dt;
+		    p.position.z += p.velocity.z * dt;
 
-		p.velocity.x += op.gravity.x * dt * this->instance_override.speed;
-		p.velocity.y += op.gravity.y * dt * this->instance_override.speed;
-		p.velocity.z += op.gravity.z * dt * this->instance_override.speed;
+		    p.velocity.x += op.gravity.x * dt * this->instance_override.speed;
+		    p.velocity.y += op.gravity.y * dt * this->instance_override.speed;
+		    p.velocity.z += op.gravity.z * dt * this->instance_override.speed;
 
-		const float drag_factor = std::max (0.0F, 1.0F - (op.drag * dt));
-		p.velocity.x *= drag_factor;
-		p.velocity.y *= drag_factor;
-		p.velocity.z *= drag_factor;
-	    } else if (op.name == "alphafade") {
-		const float life_frac = p.lifetime > 0.0F ? p.age / p.lifetime : 1.0F;
-		float fade = 1.0F;
-		if (op.fade_in_time > 0.0F && life_frac < op.fade_in_time) {
-		    fade = life_frac / op.fade_in_time;
-		} else if (op.fade_out_time < 1.0F && life_frac > op.fade_out_time) {
-		    fade = (1.0F - life_frac) / (1.0F - op.fade_out_time);
-		}
-		fade = std::clamp (fade, 0.0F, 1.0F);
-		p.alpha = p.initial.alpha * fade;
-		p.oscillate_alpha.base = p.alpha;
-	    } else if (op.name == "oscillatealpha") {
-		if (!p.oscillate_alpha.initialized) {
-		    p.oscillate_alpha.frequency = random_range (this->rng, op.frequency_min, op.frequency_max);
-		    p.oscillate_alpha.phase = random_range (this->rng, op.phase_min, op.phase_max + 6.283185F);
-		    p.oscillate_alpha.scale_min = op.scale_min;
-		    p.oscillate_alpha.scale_max = op.scale_max;
-		    p.oscillate_alpha.base = p.alpha;
-		    p.oscillate_alpha.initialized = true;
-		}
-		const float cos_val
-		    = (std::cos (p.oscillate_alpha.frequency * p.age + p.oscillate_alpha.phase) + 1.0F) * 0.5F;
-		const float mult = p.oscillate_alpha.scale_min
-		    + cos_val * (p.oscillate_alpha.scale_max - p.oscillate_alpha.scale_min);
-		p.alpha = p.oscillate_alpha.base * mult;
-	    } else if (op.name == "sizechange") {
-		const float life_frac = p.lifetime > 0.0F ? p.age / p.lifetime : 1.0F;
-		float t = 0.0F;
-		if (life_frac <= op.start_time) {
-		    t = 0.0F;
-		} else if (life_frac >= op.end_time) {
-		    t = 1.0F;
-		} else {
-		    t = (life_frac - op.start_time) / (op.end_time - op.start_time);
-		}
-		const float mult = op.start_val + t * (op.end_val - op.start_val);
-		p.size = p.initial.size * mult;
-	    } else if (op.name == "oscillateposition") {
-		const float freq = op.frequency_min > 0.0F ? op.frequency_min : 5.0F;
-		const float scale_factor = op.scale_min > 0.0F ? op.scale_min : 1.0F;
-		const float offset_sin = std::sin (freq * p.age) * scale_factor;
-		p.position.x += offset_sin * op.mask.x * dt;
-		p.position.y += offset_sin * op.mask.y * dt;
+		    {
+			const float drag_factor = std::max (0.0F, 1.0F - (op.drag * dt));
+			p.velocity.x *= drag_factor;
+			p.velocity.y *= drag_factor;
+			p.velocity.z *= drag_factor;
+		    }
+		    break;
+		case OperatorType::alpha_fade:
+		    {
+			const float life_frac = p.lifetime > 0.0F ? p.age / p.lifetime : 1.0F;
+			float fade = 1.0F;
+			if (op.fade_in_time > 0.0F && life_frac < op.fade_in_time) {
+			    fade = life_frac / op.fade_in_time;
+			} else if (op.fade_out_time < 1.0F && life_frac > op.fade_out_time) {
+			    fade = (1.0F - life_frac) / (1.0F - op.fade_out_time);
+			}
+			fade = std::clamp (fade, 0.0F, 1.0F);
+			p.alpha = p.initial.alpha * fade;
+			p.oscillate_alpha.base = p.alpha;
+		    }
+		    break;
+		case OperatorType::oscillate_alpha:
+		    {
+			if (!p.oscillate_alpha.initialized) {
+			    p.oscillate_alpha.frequency = random_range (this->rng, op.frequency_min, op.frequency_max);
+			    p.oscillate_alpha.phase = random_range (this->rng, op.phase_min, op.phase_max + 6.283185F);
+			    p.oscillate_alpha.scale_min = op.scale_min;
+			    p.oscillate_alpha.scale_max = op.scale_max;
+			    p.oscillate_alpha.base = p.alpha;
+			    p.oscillate_alpha.initialized = true;
+			}
+			const float cos_val
+			    = (std::cos (p.oscillate_alpha.frequency * p.age + p.oscillate_alpha.phase) + 1.0F) * 0.5F;
+			const float mult = p.oscillate_alpha.scale_min
+			    + cos_val * (p.oscillate_alpha.scale_max - p.oscillate_alpha.scale_min);
+			p.alpha = p.oscillate_alpha.base * mult;
+		    }
+		    break;
+		case OperatorType::size_change:
+		    {
+			const float life_frac = p.lifetime > 0.0F ? p.age / p.lifetime : 1.0F;
+			float t = 0.0F;
+			if (life_frac <= op.start_time) {
+			    t = 0.0F;
+			} else if (life_frac >= op.end_time) {
+			    t = 1.0F;
+			} else {
+			    t = (life_frac - op.start_time) / (op.end_time - op.start_time);
+			}
+			const float mult = op.start_val + t * (op.end_val - op.start_val);
+			p.size = p.initial.size * mult;
+		    }
+		    break;
+		case OperatorType::oscillate_position:
+		    {
+			const float freq = op.frequency_min > 0.0F ? op.frequency_min : 5.0F;
+			const float scale_factor = op.scale_min > 0.0F ? op.scale_min : 1.0F;
+			const float offset_sin = std::sin (freq * p.age) * scale_factor;
+			p.position.x += offset_sin * op.mask.x * dt;
+			p.position.y += offset_sin * op.mask.y * dt;
+		    }
+		    break;
+		case OperatorType::unknown:
+		    break;
 	    }
 	}
     }
@@ -793,64 +827,6 @@ void ParticleSystemState::prewarm (float seconds) {
 	this->update (step, t);
 	t += step;
     }
-}
-
-SceneRenderer::~SceneRenderer () {
-    if (this->quad_vao_ != 0) {
-	glDeleteVertexArrays (1, &this->quad_vao_);
-	this->quad_vao_ = 0;
-    }
-
-    if (this->quad_vbo_ != 0) {
-	glDeleteBuffers (1, &this->quad_vbo_);
-	this->quad_vbo_ = 0;
-    }
-}
-
-SceneRenderer::SceneRenderer (SceneRenderer&& other) noexcept :
-    layers_ (std::move (other.layers_)), lights_ (std::move (other.lights_)), ambient_ (other.ambient_),
-    textures_ (std::move (other.textures_)), texture_data_ (std::move (other.texture_data_)),
-    view_projection_ (other.view_projection_), clear_color_ (other.clear_color_), scene_width_ (other.scene_width_),
-    scene_height_ (other.scene_height_), uses_offscreen_ (other.uses_offscreen_), bloom_enabled_ (other.bloom_enabled_),
-    bloom_ (other.bloom_), fbo_scene_a_ (std::move (other.fbo_scene_a_)), fbo_scene_b_ (std::move (other.fbo_scene_b_)),
-    fbos_ (std::move (other.fbos_)), bloom_passes_ (std::move (other.bloom_passes_)),
-    blit_shader_ (std::move (other.blit_shader_)), quad_vao_ (std::exchange (other.quad_vao_, 0)),
-    quad_vbo_ (std::exchange (other.quad_vbo_, 0)), last_render_time_ (other.last_render_time_),
-    particle_systems_ (std::move (other.particle_systems_)) { }
-
-SceneRenderer& SceneRenderer::operator= (SceneRenderer&& other) noexcept {
-    if (this != &other) {
-	if (this->quad_vao_ != 0) {
-	    glDeleteVertexArrays (1, &this->quad_vao_);
-	}
-	if (this->quad_vbo_ != 0) {
-	    glDeleteBuffers (1, &this->quad_vbo_);
-	}
-
-	this->layers_ = std::move (other.layers_);
-	this->lights_ = std::move (other.lights_);
-	this->ambient_ = other.ambient_;
-	this->textures_ = std::move (other.textures_);
-	this->texture_data_ = std::move (other.texture_data_);
-	this->view_projection_ = other.view_projection_;
-	this->clear_color_ = other.clear_color_;
-	this->scene_width_ = other.scene_width_;
-	this->scene_height_ = other.scene_height_;
-	this->uses_offscreen_ = other.uses_offscreen_;
-	this->bloom_enabled_ = other.bloom_enabled_;
-	this->bloom_ = other.bloom_;
-	this->fbo_scene_a_ = std::move (other.fbo_scene_a_);
-	this->fbo_scene_b_ = std::move (other.fbo_scene_b_);
-	this->fbos_ = std::move (other.fbos_);
-	this->bloom_passes_ = std::move (other.bloom_passes_);
-	this->blit_shader_ = std::move (other.blit_shader_);
-	this->quad_vao_ = std::exchange (other.quad_vao_, 0);
-	this->quad_vbo_ = std::exchange (other.quad_vbo_, 0);
-	this->last_render_time_ = other.last_render_time_;
-	this->particle_systems_ = std::move (other.particle_systems_);
-    }
-
-    return *this;
 }
 
 std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& scene, const AssetContainer& assets) {
@@ -1174,11 +1150,9 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    return;
 	}
 
-	json root;
-	try {
-	    root = json::parse (*source);
-	} catch (const std::exception& e) {
-	    core::log_warn ("cannot parse particle json '", path, "': ", e.what ());
+	json root = json::parse (*source, nullptr, false);
+	if (root.is_discarded ()) {
+	    core::log_warn ("cannot parse particle json '", path, "': malformed JSON");
 	    return;
 	}
 
@@ -1195,44 +1169,42 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	const std::string mat_path = get_text (root, "material");
 	if (!mat_path.empty ()) {
 	    if (auto mat_text = assets.read_text (mat_path); mat_text) {
-		try {
-		    auto mj = json::parse (*mat_text);
-		    if (mj.contains ("passes") && mj["passes"].is_array () && !mj["passes"].empty ()) {
-			const auto& first = mj["passes"][0];
-			ps.blend = parse_blend (get_text (first, "blending", "translucent"));
-			if (first.contains ("combos") && first["combos"].is_object ()) {
-			    if (first["combos"].contains ("REFRACT") && first["combos"]["REFRACT"].is_number ()) {
-				ps.is_refract = first["combos"]["REFRACT"].get<int> () != 0;
-			    }
+		auto mj = json::parse (*mat_text, nullptr, false);
+		if (!mj.is_discarded () && mj.contains ("passes") && mj["passes"].is_array ()
+		    && !mj["passes"].empty ()) {
+		    const auto& first = mj["passes"][0];
+		    ps.blend = parse_blend (get_text (first, "blending", "translucent"));
+		    if (first.contains ("combos") && first["combos"].is_object ()) {
+			if (first["combos"].contains ("REFRACT") && first["combos"]["REFRACT"].is_number ()) {
+			    ps.is_refract = first["combos"]["REFRACT"].get<int> () != 0;
 			}
-			if (ps.is_refract) {
-			    ps.blend = gfx::BlendMode::normal;
-			}
-			if (first.contains ("textures") && first["textures"].is_array ()
-			    && !first["textures"].empty ()) {
-			    if (first["textures"][0].is_string ()) {
-				const std::string tpath = first["textures"][0].get<std::string> ();
-				if (tpath.find ("blank") != std::string::npos) {
-				    auto pdata = make_procedural_particle_texture ("drop");
+		    }
+		    if (ps.is_refract) {
+			ps.blend = gfx::BlendMode::normal;
+		    }
+		    if (first.contains ("textures") && first["textures"].is_array () && !first["textures"].empty ()) {
+			if (first["textures"][0].is_string ()) {
+			    const std::string tpath = first["textures"][0].get<std::string> ();
+			    if (tpath.find ("blank") != std::string::npos) {
+				auto pdata = make_procedural_particle_texture ("drop");
+				auto up = upload_texture (pdata);
+				if (up) {
+				    ps.texture = std::make_shared<gfx::Texture> (std::move (*up));
+				}
+			    } else {
+				ps.texture = load_extra_texture (tpath, "particle texture");
+				if (ps.texture == nullptr) {
+				    auto pdata = make_procedural_particle_texture (tpath);
 				    auto up = upload_texture (pdata);
 				    if (up) {
 					ps.texture = std::make_shared<gfx::Texture> (std::move (*up));
-				    }
-				} else {
-				    ps.texture = load_extra_texture (tpath, "particle texture");
-				    if (ps.texture == nullptr) {
-					auto pdata = make_procedural_particle_texture (tpath);
-					auto up = upload_texture (pdata);
-					if (up) {
-					    ps.texture = std::make_shared<gfx::Texture> (std::move (*up));
-					    result.textures_.emplace (tpath, ps.texture);
-					}
+					result.textures_.emplace (tpath, ps.texture);
 				    }
 				}
 			    }
 			}
 		    }
-		} catch (...) { }
+		}
 	    }
 	}
 
@@ -1256,6 +1228,11 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    for (const auto& ej : root["emitter"]) {
 		ParticleEmitterDef em;
 		em.name = get_text (ej, "name", "boxrandom");
+		if (em.name == "sphererandom") {
+		    em.type = EmitterType::sphere_random;
+		} else {
+		    em.type = EmitterType::box_random;
+		}
 		em.origin = get_vec3 (ej, "origin", {});
 		em.distance_min = get_vec3 (ej, "distancemin", {});
 		em.distance_max = get_vec3 (ej, "distancemax", { 100.0F, 100.0F, 0.0F });
@@ -1275,6 +1252,21 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    for (const auto& ij : root["initializer"]) {
 		ParticleInitializerDef init;
 		init.name = get_text (ij, "name");
+		if (init.name == "lifetimerandom") {
+		    init.type = InitializerType::lifetime_random;
+		} else if (init.name == "sizerandom") {
+		    init.type = InitializerType::size_random;
+		} else if (init.name == "alpharandom") {
+		    init.type = InitializerType::alpha_random;
+		} else if (init.name == "colorrandom") {
+		    init.type = InitializerType::color_random;
+		} else if (init.name == "velocityrandom") {
+		    init.type = InitializerType::velocity_random;
+		} else if (init.name == "rotationrandom") {
+		    init.type = InitializerType::rotation_random;
+		} else if (init.name == "angularvelocityrandom") {
+		    init.type = InitializerType::angular_velocity_random;
+		}
 		init.min_val = get_number (ij, "min", 0.0F);
 		init.max_val = get_number (ij, "max", 1.0F);
 		init.exponent = get_number (ij, "exponent", 1.0F);
@@ -1288,6 +1280,17 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    for (const auto& oj : root["operator"]) {
 		ParticleOperatorDef op;
 		op.name = get_text (oj, "name");
+		if (op.name == "movement") {
+		    op.type = OperatorType::movement;
+		} else if (op.name == "alphafade") {
+		    op.type = OperatorType::alpha_fade;
+		} else if (op.name == "oscillatealpha") {
+		    op.type = OperatorType::oscillate_alpha;
+		} else if (op.name == "sizechange") {
+		    op.type = OperatorType::size_change;
+		} else if (op.name == "oscillateposition") {
+		    op.type = OperatorType::oscillate_position;
+		}
 		op.gravity = get_vec3 (oj, "gravity", {});
 		op.drag = get_number (oj, "drag", 0.0F);
 		op.fade_in_time = get_number (oj, "fadeintime", 0.0F);
@@ -1457,10 +1460,10 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    { -1.0F, 1.0F, 0.0F, 0.0F, 1.0F },
 	} };
 
-	glGenVertexArrays (1, &result.quad_vao_);
-	glGenBuffers (1, &result.quad_vbo_);
-	glBindVertexArray (result.quad_vao_);
-	glBindBuffer (GL_ARRAY_BUFFER, result.quad_vbo_);
+	result.quad_vao_ = gfx::GlVertexArray::generate ();
+	result.quad_vbo_ = gfx::GlBuffer::generate ();
+	result.quad_vao_.bind ();
+	result.quad_vbo_.bind (GL_ARRAY_BUFFER);
 	glBufferData (GL_ARRAY_BUFFER, sizeof (quad_verts), quad_verts.data (), GL_STATIC_DRAW);
 	glEnableVertexAttribArray (0);
 	glVertexAttribPointer (
@@ -1470,8 +1473,8 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	glVertexAttribPointer (
 	    1, 2, GL_FLOAT, GL_FALSE, sizeof (QuadVertex), reinterpret_cast<const void*> (offsetof (QuadVertex, u))
 	);
-	glBindVertexArray (0);
-	glBindBuffer (GL_ARRAY_BUFFER, 0);
+	gfx::GlVertexArray::unbind ();
+	gfx::GlBuffer::unbind (GL_ARRAY_BUFFER);
 
 	constexpr const char* blit_vert = "#version 330 core\n"
 					  "layout (location = 0) in vec3 a_Position;\n"
@@ -1499,8 +1502,12 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	result.blit_shader_ = std::move (*blit_sh);
     }
 
+    const auto image_layer_count = std::count_if (result.layers_.begin (), result.layers_.end (), [] (const Layer& l) {
+	return !l.is_particle && !l.is_effect;
+    });
+
     core::log_info (
-	"scene: ", result.layers_.size (), " image layers, ", result.lights_.size (), " point lights, ",
+	"scene: ", image_layer_count, " image layers, ", result.lights_.size (), " point lights, ",
 	scene.skipped_objects, " objects not rendered"
     );
     return result;
@@ -1661,9 +1668,9 @@ void SceneRenderer::render_effect_pass (
 	pass.shader.set_int (name, val);
     }
 
-    glBindVertexArray (this->quad_vao_);
+    this->quad_vao_.bind ();
     glDrawArrays (GL_TRIANGLES, 0, 6);
-    glBindVertexArray (0);
+    gfx::GlVertexArray::unbind ();
 
     if (pass.target.empty ()) {
 	std::swap (current_composite, next_composite);
@@ -1968,9 +1975,9 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
     glActiveTexture (GL_TEXTURE0);
     glBindTexture (GL_TEXTURE_2D, current_composite->color_texture ());
 
-    glBindVertexArray (this->quad_vao_);
+    this->quad_vao_.bind ();
     glDrawArrays (GL_TRIANGLES, 0, 6);
-    glBindVertexArray (0);
+    gfx::GlVertexArray::unbind ();
     glBindTexture (GL_TEXTURE_2D, 0);
 }
 
