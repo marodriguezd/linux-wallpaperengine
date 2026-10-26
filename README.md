@@ -1,126 +1,179 @@
 <p align="center">
-  <img src="assets/icons/we-wallpaper.svg" width="80" height="80" alt="Linux Wallpaper Engine Icon" />
+  <img src="assets/icons/we-wallpaper.svg" width="96" height="96" alt="Linux Wallpaper Engine Icon" />
 </p>
 
-# Linux Wallpaper Engine
+<h1 align="center">Linux Wallpaper Engine</h1>
 
-High-performance, modern C++23 Wallpaper Engine runtime for Linux with zero-copy presentation, single-pass multimonitor decoding, full particle simulation, and cross-toolkit desktop integration (Qt, GTK, Quickshell, Web).
+<p align="center">
+  <strong>High-performance, modern C++23 Wallpaper Engine runtime, renderer, and desktop control suite for Linux.</strong>
+</p>
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](#building)
-[![Platform](https://img.shields.io/badge/platform-Linux%20(X11%20%7C%20Wayland)-blue?style=flat-square)](#display-backends)
-[![Language](https://img.shields.io/badge/language-C%2B%2B23-blue?style=flat-square)](#architecture)
-[![Tests](https://img.shields.io/badge/tests-87%2F87%20passing-brightgreen?style=flat-square)](#building)
-[![Toolkits](https://img.shields.io/badge/toolkits-Qt%20%7C%20GTK%20%7C%20Quickshell%20%7C%20Web-orange?style=flat-square)](#frontends--gui-integration)
+<p align="center">
+  <a href="#building"><img src="https://img.shields.io/badge/build-passing-brightgreen?style=flat-square" alt="Build Status" /></a>
+  <a href="#architecture"><img src="https://img.shields.io/badge/standard-C%2B%2B23-blue?style=flat-square" alt="C++23" /></a>
+  <a href="#building"><img src="https://img.shields.io/badge/tests-98%2F98%20passing-brightgreen?style=flat-square" alt="Tests 98/98 passing" /></a>
+  <a href="#display-backends"><img src="https://img.shields.io/badge/platform-Linux%20(X11%20%7C%20Wayland)-blue?style=flat-square" alt="Platform Linux" /></a>
+  <a href="#quickshell-control-dock"><img src="https://img.shields.io/badge/UI-Quickshell%20%7C%20Web%20%7C%20CLI-orange?style=flat-square" alt="UI Interfaces" /></a>
+</p>
 
 ---
 
 ## Overview
 
-**Linux Wallpaper Engine** brings animated Steam Wallpaper Engine wallpapers to Linux desktops without draining laptop battery or overloading the GPU. Engineered from scratch in modern C++23, it replaces the legacy codebase with small, modular static libraries unified behind a single executable: `we`.
+**Linux Wallpaper Engine** brings animated Steam Wallpaper Engine wallpapers to Linux desktops without draining laptop battery or overloading GPU resources. Re-engineered completely from the ground up in modern **C++23**, the engine replaces legacy implementations with a modular, zero-copy architecture designed for high efficiency and flawless visual fidelity.
+
+Whether running complex 3D scenes with real-time particle simulations, multi-pass bloom post-processing, PBR lighting, or hardware-decoded 4K video, the engine guarantees a single compositing and decoding pass across all connected monitors.
 
 ```
-[ Monitors: eDP-1 (144Hz Primary) + HDMI-1 (75Hz) ]
+[ Monitors: eDP-1 (144Hz Primary) + HDMI-1 (75Hz Secondary) ]
            │
-           ├─► Viewport 1 (eDP-1)  ──┐
-           │                         ├─► Shared Wallpaper Instance
-           └─► Viewport 2 (HDMI-1) ──┘     ├─► Single libmpv Decoder (RGBA16F zero-copy)
-                                           └─► Single Scene / Particles / FBO Post-Processing Pass
+           ├─► Output 1 (eDP-1)  ──┐
+           │                       ├─► Shared Wallpaper Instance
+           └─► Output 2 (HDMI-1) ──┘     ├─► Single libmpv Decoder (RGBA16F zero-copy)
+                                         └─► Single Scene / Particles / FBO Post-Processing Pass
 ```
 
 > [!TIP]
-> **Single decode per wallpaper**: Regardless of monitor count, video decoding and scene compositing run exactly once per frame. The resulting texture is shared across all output swapchains, saving memory bandwidth and keeping power consumption minimal.
+> **Single-Pass Multi-Monitor Pipeline**: Regardless of monitor count or display resolutions, video decoding and scene compositing execute exactly once per frame. The resulting texture is shared directly across all output swapchains, saving substantial GPU memory bandwidth and keeping power consumption minimal on both AC and battery.
 
 ---
 
-## Key Features
+## Quickshell Control Dock & Gallery
 
-### Graphics & Scene Pipeline
-* **Canonical Coordinate Transforms**: Matches Wallpaper Engine's top-left origin space ($y$-down in `scene.json`), projecting to a centered $y$-up world with clockwise radian quad rotation (`angles.z`).
-* **Broad Texture Format Support**: Native decoders for TEX and TEXB mipmaps in `ARGB8888`, `RGB888`, `RGB565`, `R8`, `DXT1`, `DXT3`, `DXT5`, `BC7`, and dual `RG88` (standard two-channel normal/flow maps + `TextureFlags_AlphaChannelPriority` luminance-alpha).
-* **Animated Spritesheets**: Decodes `TEXS0001` and `TEXS0003` animated atlas sheets with frame-time cycling, frame counts, and sub-rectangle UV cropping.
-* **Full Particle Simulation Engine**: Real-time batch-quad simulation (`boxrandom`, `sphererandom` emitters; continuous rate and burst spawning; gravity, drag, velocity, angular velocity, alpha fades, size scaling, sprite trails, and prewarming) optimized via compile-time enums for zero per-frame heap allocations.
-* **Post-Processing & FBO Ping-Pong**: Multi-pass offscreen framebuffers (`_rt_FullFrameBuffer`), bloom downsample/upsample passes, chromatic aberration, blur, and dynamic shader timers (`g_Time`).
-* **PBR Lighting & Screen-Space Reflections**: Point lights (`lpoint`), ambient term, GGX specular falloff, PBR masks (`metallic`, `roughness`, `reflection`, `emissive`), and normal-mapped screen reflections.
-* **Hardware-Accelerated Video**: Single-decode `libmpv` output directly rendered into a 16-bit float (`RGBA16F`) texture, avoiding 8-bit dithering artifacts on Mesa and supporting embedded MP4 textures inside TEXB.
+The desktop experience is anchored by a companion control gallery built with **Quickshell** (`contrib/quickshell-gallery/`). Following a refined **Master-Detail** architectural model and the **"Precision Foundry"** design token system (`#111317` void base, `#191C22` surface, `#38BDF8` pacing cyan, `#F59E0B` telemetry amber), it provides an integrated floating suite to browse, configure, and monitor wallpapers live.
 
-### System & Desktop Integration
-* **In-Situ `.pkg` Archive Reader**: Memory-mapped zero-copy access to `scene.pkg` and `gifscene.pkg` files without extracting them to disk.
-* **Native Steam Discovery**: Auto-detects Steam installations and workshop directories from `libraryfolders.vdf`, including native paths, Flatpak, Snap, Proton prefixes, and Windows NTFS/ext4 mounts.
-* **Case-Insensitive VFS**: Normalizes Windows directory separators (`\`) and case variations at the filesystem boundary.
-* **Power & Battery Governor**: Monotonic frame pacer (`clock_nanosleep`), automatic AC/battery rate throttling, and smart pausing when active windows cover the wallpaper in fullscreen.
+<p align="center">
+  <img src="docs/images/gallery-main.png" alt="Quickshell Gallery Panoramic View" width="100%" />
+</p>
+<p align="center"><em>Panoramic view of the Quickshell Gallery featuring the OmnibarHeader, media-first 16:9 card grid, active wallpaper pill, search filter, and live engine telemetry.</em></p>
+
+### Interactive Inspection Panes
+
+The collapsible **Control Dock** exposes three dedicated inspectors for runtime customization:
+
+| Tab | Interface Preview | Functionality |
+| :--- | :--- | :--- |
+| **⚡ Pacing & Performance** | <img src="docs/images/gallery-pacing.png" width="380" alt="Pacing Tab" /> | **1-Click Performance Presets**: Instant switching between **ECO** (30 FPS AC / 15 FPS Battery), **BALANCED** (60 FPS AC / 30 FPS Battery), and **ULTRA** (Uncapped native display refresh rate, e.g., 144 Hz).<br/><br/>**Granular FPS Sliders**: Continuous pacing adjustments with physical tick markers for both AC and battery power states.<br/><br/>**Smart Energy Policies**: Seamless toggles for battery pause when unplugged and fullscreen window occlusion pausing. |
+| **🖥 Displays & Outputs** | <img src="docs/images/gallery-displays.png" width="380" alt="Displays Tab" /> | **Interactive Screen Matrix**: Full topology visualizer (`ScreenMatrixSelector`) rendering all active outputs (`eDP-1`, `HDMI-1`) with resolution and refresh telemetry.<br/><br/>**Flexible Layout Modes**: Toggle between **Clone Mode** (single synchronised wallpaper spanned across outputs) and **Individual Mode** (independent wallpapers per monitor).<br/><br/>**Instant Target Assignment**: Direct 1-click wallpaper application to selected outputs via `apply-screen`. |
+| **🎛 Scene & Audio** | <img src="docs/images/gallery-scene.png" width="380" alt="Scene and Audio Tab" /> | **Dynamic Polymorphic Properties**: Inspects and edits wallpaper variables declared in `project.json` and saved per wallpaper to `props.conf`.<br/><br/>**Rich Inspector Controls**: Live RGB color chips with hex inputs, continuous floating-point and integer sliders, and boolean toggles.<br/><br/>**Audio Control Suite**: Master volume level slider, 1-click audio mute toggle, and audio reactive channel configuration. |
+
+---
+
+## Core Engine Highlights (C++23 Rebuild)
+
+### 1. Canonical Coordinate Mapping
+Matches Wallpaper Engine's native coordinate system: origin at the top-left with $y$-down in `scene.json`. The scene compiler projects geometry into an OpenGL-standard centered world with $y$-up. Quad positions use object centers (`origin`), layer dimensions are multiplied by `scale`, and orientation angles (`angles.z`) are evaluated in clockwise radians.
+
+### 2. In-Situ `.pkg` Archive & Case-Insensitive VFS
+Archives (`scene.pkg`, `gifscene.pkg`) are mapped directly into virtual memory via `mmap` with zero disk extraction. The virtual filesystem (VFS) normalizes Windows-style backslashes (`\`) and resolves casing mismatches on Linux ext4/Btrfs filesystems with cached directory indexing, avoiding filesystem traversal penalties.
+
+### 3. Broad Texture & Compression Format Support
+High-performance native decoding for Wallpaper Engine `TEX` and `TEXB` formats across all common block and uncompressed pixel layouts:
+* **Block Compression**: DXT1 (BC1), DXT3 (BC2), DXT5 (BC3), and BC7 (BPTC).
+* **Uncompressed Formats**: ARGB8888, RGB888, RGB565, and R8.
+* **Dual-Mode RG88**: Automatically handles both standard two-channel normal/flow maps and `TextureFlags_AlphaChannelPriority` luminance-alpha textures.
+* **Animated Spritesheets**: Decodes `TEXS0001` and `TEXS0003` animated atlas sheets with frame-time cycling, sub-rectangle UV cropping, and frame indices.
+
+### 4. Real-Time Particle Simulation Engine
+A dedicated simulation subsystem optimized for high particle counts with zero per-frame heap allocations:
+* **Emission Models**: Box (`boxrandom`) and spherical (`sphererandom`) volume emitters with continuous emission rates and burst spawning.
+* **Physics & Dynamics**: Gravity vectors, planar drag, velocity inheritance, angular velocity, and turbulence.
+* **Particle Lifecycles**: Multi-point alpha fade-in/fade-out curves, size-over-lifetime scaling, animated sprite trails, and simulation prewarming to prevent cold starts.
+
+### 5. Offscreen FBO Post-Processing & Bloom Ping-Pong
+* **Render Targets**: Full support for internal framebuffers (`_rt_FullFrameBuffer`) with multi-pass ping-pong rendering.
+* **High-Quality Bloom**: Multi-stage downsample and upsample blur passes with HDR thresholding.
+* **Shader Post-Effects**: Chromatic aberration, blur kernels, dynamic scene timers (`g_Time`), and custom effect passes with additive blending.
+
+### 6. Physically Based Lighting (PBR) & Reflections
+* **Light Sources**: Real-time point lights (`lpoint`) with configurable falloff radiuses, colors, and global ambient irradiance terms.
+* **PBR Shading**: Cook-Torrance GGX specular evaluation driven by multi-channel PBR material masks (`metallic`, `roughness`, `reflection`, `emissive`).
+* **Screen-Space Reflections**: Normal-mapped reflections sampling the composite scene framebuffer.
+
+### 7. Parallax Inertia Camera & Cursor Tracking
+Camera layers respond dynamically to cursor motion with configurable inertia, spring dampening, and multi-layer depth displacement. The engine transparently queries root pointer coordinates across both **X11** (`XQueryPointer`) and **Wayland** environments.
+
+### 8. Hardware-Accelerated Video Decoding
+Integrated `libmpv` pipeline rendering directly into 16-bit floating-point textures (`GL_RGBA16F`), avoiding banding artifacts on Mesa drivers. Embedded MP4 video streams packed inside `TEXB` texture containers (identified by the `ftyp` box marker at byte offset 4) are detected automatically and decoded as live video textures.
+
+### 9. Audio Reactive Processing & Scene Sound Channels
+Real-time audio waveform and frequency spectrum analysis feeds audio-reactive wallpaper shaders and particle emitters. Scene sound layers play back with per-channel volume mixing, loop flags, and spatial attenuation.
 
 ---
 
 ## Display Backends
 
-| Backend | Platform | Presentation Mechanism | Best Used For |
+The engine includes native drivers for modern Linux display servers and compositors:
+
+| Backend | Platform | Presentation Architecture | Recommended Use Case |
 | :--- | :--- | :--- | :--- |
-| `x11-desktop` | X11 | EGL window with `_NET_WM_WINDOW_TYPE_DESKTOP`, `BELOW`, `STICKY` | Default for modern composited X11 desktops (Picom, KWin X11, GNOME X11, Xfce). |
-| `x11-root` | X11 | Fullscreen EGL window covering all outputs / MIT-SHM root-pixmap | Traditional tiling and lightweight window managers (dwm, i3, bspwm, Openbox). |
-| `wayland` | Wayland | `zwlr_layer_shell_v1` background or bottom layer per `wl_output` | Native Wayland compositors supporting `wlr-layer-shell` (Hyprland, Sway, River). |
-| `headless` | Any | EGL PBuffer / Surfaceless offscreen context | Automated testing, CI, benchmarks, and PNG captures via `--screenshot`. |
+| `x11-desktop` | X11 | EGL window with `_NET_WM_WINDOW_TYPE_DESKTOP`, `BELOW`, `STICKY` | Default for modern composited X11 desktops (GNOME X11, KWin X11, Xfce, Picom). |
+| `x11-root` | X11 | Fullscreen EGL window covering all outputs / MIT-SHM root pixmap | Traditional tiling and lightweight window managers (i3, bspwm, dwm, Openbox). |
+| `wayland` | Wayland | `zwlr_layer_shell_v1` on background / bottom layer per `wl_output` | Modern Wayland compositors (Hyprland, Sway, River, Wayfire). |
+| `headless` | Headless | EGL PBuffer / Surfaceless offscreen context | Automated CI testing, offline rendering, and PNG generation (`--screenshot`). |
 
 ---
 
-## Frontends & GUI Integration
+## Frontends & GUI Ecosystem
 
-Linux Wallpaper Engine provides multiple interfaces tailored to different desktop workflows:
+In addition to the main Quickshell Control Dock, Linux Wallpaper Engine integrates into diverse desktop environments:
 
-### 1. Quickshell Desktop Gallery (`contrib/quickshell-gallery/`)
-A responsive, floating control window (`GalleryWindow.qml` + `GalleryModel.qml`) built for Wayland and X11:
-* **Toolkit Theme Selector**: Dynamically switch the UI style on the fly between:
-  * **Auto / Sistema**: Inherits live colors from `~/.config/quickshell/core/Theme.qml` via desktop portal.
-  * **GTK / Libadwaita**: GNOME dark styling (`#1e1e1e`/`#242424`, 10px rounded corners, GNOME blue accent).
-  * **Qt / KDE Breeze**: Plasma dark styling (`#232629`/`#31363b`, 5px clean corners, Breeze cyan accent).
-  * **Brave / Obsidian**: Obsidian palette (`#0d1117`/`#161c24`, 8px corners, Brave Lion Orange accent).
-* **Wayland Layer & Backend Controls**: Select layer (`background`, `bottom`, `overlay`) and toggle fullscreen pause.
-* **GPU Governor**: Toggle between `Intel iGPU` (saves laptop battery by keeping dGPU in D3cold) and `dGPU Rendimiento`.
-
-### 2. Standalone Web Gallery & Dashboard (`contrib/web-gallery/`)
-A self-contained, zero-dependency browser UI (`index.html`) to browse, preview, and control wallpapers:
-* Live engine telemetry (`we 2.0.0`, active wallpaper, monitor refresh rate, battery state).
-* Instant zero-reload Toolkit switcher (Auto, GTK, Qt, Brave).
-* Media-first 16:9 wallpaper grid with resolution badges (4K, 1080p).
-* Reactive CLI generator for `we run` and `we-wallpaper` commands with one-click clipboard copying.
-
-### 3. Lightweight Desktop Menus (`rofi` / `dmenu`)
-Via `tools/we-wallpaper`:
-```bash
-we-wallpaper grid       # Interactive grid with thumbnails in Rofi
-we-wallpaper switch     # Cascading selection menu (rofi > dmenu > fzf > terminal)
-we-wallpaper toolkit    # View or set toolkit theme (auto | gtk | qt | brave)
-we-wallpaper gpu        # View or set GPU governor (intel | nvidia | auto)
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Linux Wallpaper Engine                          │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+    ┌───────────────────────────────┼───────────────────────────────┐
+    │                               │                               │
+┌───▼──────────────────────┐  ┌─────▼────────────────────┐  ┌───────▼────────────────────┐
+│    Quickshell Gallery    │  │    Standalone Web UI     │  │    Rofi / dmenu / CLI      │
+│  contrib/quickshell-     │  │   contrib/web-gallery/   │  │    tools/we-wallpaper      │
+│  gallery/                │  │                          │  │                            │
+│  Full desktop UI with    │  │  Zero-dependency browser │  │  Fast terminal launcher    │
+│  Control Dock & sliders  │  │  telemetry & preview grid│  │  and window manager menus  │
+└──────────────────────────┘  └──────────────────────────┘  └────────────────────────────┘
 ```
 
+1. **Quickshell Gallery (`contrib/quickshell-gallery/`)**: Native Wayland/X11 floating interface with live properties, telemetry, and monitor routing.
+2. **Standalone Web Gallery (`contrib/web-gallery/`)**: Zero-dependency local web dashboard (`index.html`) providing responsive grid previews, telemetry monitoring, and CLI command generation.
+3. **Desktop Launcher (`tools/we-wallpaper`)**: Scriptable wrapper for Rofi, dmenu, and fzf:
+   ```bash
+   we-wallpaper grid           # Visual wallpaper picker with thumbnails in Rofi
+   we-wallpaper switch         # Cascading menu (rofi -> dmenu -> fzf -> terminal)
+   we-wallpaper apply-screen eDP-1 3615154110  # Apply wallpaper to a specific monitor
+   we-wallpaper power-set FPS=144 BATTERY_FPS=30 PAUSE_ON_BATTERY=1
+   ```
+
 ---
 
-## Architecture
+## Architecture & Codebase Map
 
-The project is structured into modular C++23 libraries under `src/`:
+The C++23 rebuild is structured into clean, decoupled static libraries under `src/`:
 
 ```
 src/
-├── core/       # Error handling (std::expected), logging, math (Vec2/3/4, Mat4), LZ4, mapped files
-├── steam/      # KeyValues VDF parser, Steam discovery, case-insensitive VFS, .pkg reader
+├── core/       # std::expected error types, logging, math (Vec2/3/4, Mat4), LZ4, memory-mapped files
+├── steam/      # KeyValues VDF parser, Steam library discovery, case-insensitive VFS, .pkg reader
 ├── gfx/        # EGL contexts, GLSL shaders, textures, framebuffers, batch quad renderer
-├── display/    # Backends: x11-desktop, x11-root, wayland (wlr-layer-shell), headless
+├── display/    # Display backends: x11-desktop, x11-root, wayland (wlr-layer-shell), headless
 ├── scene/      # project.json/scene.json, TEXB, spritesheets, particles, FBO post-processing, libmpv
-├── power/      # UPower/sysfs battery monitor, monotonic frame pacer
-├── presets/    # Performance profiles (battery, balanced, smooth)
-├── app/        # Engine core lifecycle, monitor management, render loop
-└── cli/        # The 'we' executable
+├── power/      # Battery monitoring (UPower/sysfs), monotonic frame pacer (clock_nanosleep)
+├── presets/    # Performance profile management (battery, balanced, smooth)
+├── app/        # Engine core lifecycle, output monitor management, render loop coordinator
+└── cli/        # The 'we' unified command line executable
 ```
 
 > [!NOTE]
-> The legacy C++17 implementation is kept under `src/WallpaperEngine/` and `src/Steam/` for historical reference only; it is not compiled or linked.
+> The legacy C++17 implementation in `src/WallpaperEngine/` and `src/Steam/` is maintained exclusively for historical reference and is excluded from compilation and testing.
 
 ---
 
-## Prerequisites & Installation
+## Installation & Dependencies
 
-To render Steam Workshop wallpapers, you must own and install [Wallpaper Engine](https://store.steampowered.com/app/431960/Wallpaper_Engine/) on Steam. The engine locates your library and shared assets automatically.
+### Prerequisites
+To render Steam Workshop wallpapers, install [Wallpaper Engine](https://store.steampowered.com/app/431960/Wallpaper_Engine/) through Steam. The engine automatically discovers library locations, workshop subscriptions, and shared assets.
 
-### Dependencies
+### Package Requirements
 
 #### Fedora (40 / 41 / 42+)
 ```bash
@@ -146,23 +199,24 @@ sudo pacman -S base-devel cmake ninja \
 
 ## Building
 
-The build system is powered by CMake presets:
+The build system leverages modern CMake presets:
 
 ### Optimized Release Build
 ```bash
 cmake --preset release
 cmake --build --preset release
 ```
-The compiled binary will be placed at `./build/release/bin/we`.
+The resulting binary is generated at `./build/release/bin/we`.
 
-### Debug Build & Test Suite
+### Debug Build & Unit Test Suite
 ```bash
 cmake --preset debug
 cmake --build --preset debug
 ctest --preset debug --output-on-failure
 ```
 
-### Sanitizer Verification (ASan & LSan)
+### Address & Leak Sanitizer Build
+Compile with `-Werror`, AddressSanitizer (ASan), and LeakSanitizer (LSan) enabled:
 ```bash
 cmake --preset asan
 cmake --build --preset asan
@@ -171,55 +225,66 @@ ctest --preset asan
 
 ---
 
-## CLI Usage (`we`)
+## Command Line Interface (`we`)
 
-```bash
+The unified binary `we` provides complete control over rendering, discovery, inspection, and diagnostics:
+
+```
 we 2.0.0 - Wallpaper Engine runtime for Linux
 
 Usage:
   we run PATH|WORKSHOP_ID [options]
   we list [--json]
-  we steam [--json]
+  we steam [--json] [--home DIR] [--library DIR]... [--no-mounts] [--no-proton]
   we doctor
-  we vfs --root DIR [--list] PATH
-  we pkg ARCHIVE [--list] [--extract ENTRY --out FILE]
+  we vfs --root DIR [--root DIR]... [--list] [--cat] PATH
+  we pkg ARCHIVE [--list] [--cat ENTRY | --extract ENTRY --out FILE]
   we --version
 ```
 
-### Common Commands
+### Practical Examples
 
 #### 1. Play a Workshop Wallpaper
 ```bash
-# Play by workshop ID on primary desktop:
+# Play by workshop ID on primary display:
 we run 3615154110
 
-# Target a specific output:
+# Target a specific monitor:
 we run 3615154110 --output eDP-1
 
-# Use a specific performance profile (battery, balanced, smooth):
+# Apply a performance preset (battery, balanced, smooth):
 we run 3615154110 --preset smooth
 
-# Set custom AC and battery frame rates:
+# Set explicit frame pacing and battery behavior:
 we run 3615154110 --fps 144 --battery-fps 30 --pause-on-battery
 
 # Force a specific display backend:
-we run 3615154110 --backend x11-desktop   # or wayland, x11-root, headless
+we run 3615154110 --backend wayland   # Options: auto, wayland, x11-desktop, x11-root, headless
+
+# Enable video audio with custom volume:
+we run 3615154110 --audio --volume 75
 ```
 
-#### 2. Headless Offscreen Capture
+#### 2. Headless Offscreen Rendering & Screenshots
 ```bash
-# Render 60 frames offscreen and write the final composited frame to PNG:
+# Render 60 frames offscreen and output the composited frame to PNG:
 we run 3615154110 --backend headless --frames 60 --screenshot preview.png
 ```
 
-#### 3. Inspect System Status & Discovery
+#### 3. System Diagnostics & Discovery
 ```bash
-# Report detected display servers, OpenGL renderer, battery level, and Steam libraries:
+# Verify OpenGL renderer, display server, battery monitor, and Steam paths:
 we doctor
 
-# List all discovered Steam Wallpaper Engine wallpapers:
+# List all discovered wallpapers in installed Steam libraries:
 we list
 
-# Inspect contents of a package file in-place:
+# Inspect an archive without extracting files:
 we pkg /path/to/scene.pkg --list
 ```
+
+---
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0 (GPLv3)**. See [LICENSE](LICENSE) for full details.

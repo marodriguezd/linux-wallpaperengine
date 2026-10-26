@@ -82,9 +82,11 @@ public:
     // Bounds of the active fullscreen window on `output_index`, if any. Used to
     // pause rendering behind fullscreen games.
     [[nodiscard]] virtual std::optional<core::Rect> fullscreen_window (std::size_t output_index) const {
-        (void)output_index;
-        return std::nullopt;
+	(void)output_index;
+	return std::nullopt;
     }
+
+    [[nodiscard]] virtual std::optional<core::Vec2> cursor_position () const { return std::nullopt; }
 
 protected:
     Driver () = default;

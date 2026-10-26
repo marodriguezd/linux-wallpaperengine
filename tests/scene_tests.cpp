@@ -20,6 +20,7 @@
 #include "we/scene/scene.hpp"
 #include "we/scene/scene_renderer.hpp"
 #include "we/scene/texture.hpp"
+#include "we/scene/video.hpp"
 
 using namespace we;
 
@@ -29,6 +30,10 @@ void append_u32 (std::vector<std::byte>& output, std::uint32_t value) {
     for (unsigned int shift = 0; shift < 32; shift += 8) {
 	output.push_back (static_cast<std::byte> ((value >> shift) & 0xFFU));
     }
+}
+
+void append_f32 (std::vector<std::byte>& output, float value) {
+    append_u32 (output, std::bit_cast<std::uint32_t> (value));
 }
 
 void append_raw (std::vector<std::byte>& output, std::string_view value) {
@@ -71,6 +76,37 @@ void append_magic (std::vector<std::byte>& output, std::string_view value) {
 	bytes.push_back (static_cast<std::byte> (rgba[index + 1]));
 	bytes.push_back (static_cast<std::byte> (rgba[index + 0]));
 	bytes.push_back (static_cast<std::byte> (rgba[index + 3]));
+    }
+
+    return bytes;
+}
+
+struct TestFrame {
+    float frametime = 0.0F;
+    float x = 0.0F;
+    float y = 0.0F;
+    float width = 0.0F;
+    float height = 0.0F;
+};
+
+[[nodiscard]] std::vector<std::byte> make_animated_argb_texture (
+    int width, int height, std::span<const std::uint8_t> rgba, std::span<const TestFrame> frames
+) {
+    auto bytes = make_argb_texture (width, height, rgba);
+    append_magic (bytes, "TEXS0003");
+    append_u32 (bytes, static_cast<std::uint32_t> (frames.size ()));
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+
+    for (std::uint32_t i = 0; i < frames.size (); ++i) {
+	append_u32 (bytes, i);
+	append_f32 (bytes, frames[i].frametime);
+	append_f32 (bytes, frames[i].x);
+	append_f32 (bytes, frames[i].y);
+	append_f32 (bytes, frames[i].width);
+	append_f32 (bytes, 0.0F); // width2
+	append_f32 (bytes, 0.0F); // height2
+	append_f32 (bytes, frames[i].height);
     }
 
     return bytes;
@@ -129,6 +165,46 @@ make_rg88_texture (int width, int height, std::span<const std::uint8_t> rg, std:
 
     for (const auto val : rg) {
 	bytes.push_back (static_cast<std::byte> (val));
+    }
+    return bytes;
+}
+
+[[nodiscard]] std::vector<std::byte> make_jpeg_texture (int width = 2, int height = 2) {
+    constexpr std::array<std::uint8_t, 225> jpeg_bytes
+	= { { 255, 216, 255, 224, 0,  16, 74, 70, 73, 70, 0,  1,   2,  0,  0,   1,   0,   1,  0,  0, 255, 254, 0,
+	      16,  76,  97,  118, 99, 54, 50, 46, 50, 56, 46, 49,  48, 51, 0,   255, 219, 0,  67, 0, 8,   4,   4,
+	      4,   4,   4,   5,   5,  5,  5,  5,  5,  6,  6,  6,   6,  6,  6,   6,   6,   6,  6,  6, 6,   6,   7,
+	      7,   7,   8,   8,   8,  7,  7,  7,  6,  6,  7,  7,   8,  8,  8,   8,   9,   9,  9,  8, 8,   8,   8,
+	      9,   9,   10,  10,  10, 12, 12, 11, 11, 14, 14, 14,  17, 17, 20,  255, 196, 0,  76, 0, 1,   1,   0,
+	      0,   0,   0,   0,   0,  0,  0,  0,  0,  0,  0,  0,   0,  0,  6,   1,   1,   1,  0,  0, 0,   0,   0,
+	      0,   0,   0,   0,   0,  0,  0,  0,  0,  6,  7,  16,  1,  0,  0,   0,   0,   0,  0,  0, 0,   0,   0,
+	      0,   0,   0,   0,   0,  0,  17, 1,  0,  0,  0,  0,   0,  0,  0,   0,   0,   0,  0,  0, 0,   0,   0,
+	      0,   255, 192, 0,   17, 8,  0,  2,  0,  2,  3,  1,   34, 0,  2,   17,  0,   3,  17, 0, 255, 218, 0,
+	      12,  3,   1,   0,   2,  17, 3,  17, 0,  63, 0,  139, 0,  77, 127, 127, 255, 217 } };
+
+    std::vector<std::byte> bytes;
+    append_magic (bytes, "TEXV0005");
+    append_magic (bytes, "TEXI0001");
+    append_u32 (bytes, 0); // format_argb8888
+    append_u32 (bytes, 2); // flags
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+    append_u32 (bytes, 0);
+
+    append_magic (bytes, "TEXB0003");
+    append_u32 (bytes, 1); // image count
+    append_u32 (bytes, 2); // free_image_format = FIF_JPEG (2)
+    append_u32 (bytes, 1); // mipmaps
+    append_u32 (bytes, static_cast<std::uint32_t> (width));
+    append_u32 (bytes, static_cast<std::uint32_t> (height));
+    append_u32 (bytes, 0); // uncompressed payload in container
+    append_u32 (bytes, static_cast<std::uint32_t> (jpeg_bytes.size ()));
+    append_u32 (bytes, static_cast<std::uint32_t> (jpeg_bytes.size ()));
+
+    for (const auto b : jpeg_bytes) {
+	bytes.push_back (static_cast<std::byte> (b));
     }
     return bytes;
 }
@@ -304,6 +380,17 @@ TEST (texture_decodes_argb_texb) {
     CHECK_EQ (texture->rgba[1], std::uint8_t { 0 });
     CHECK_EQ (texture->rgba[4], std::uint8_t { 0 });
     CHECK_EQ (texture->rgba[5], std::uint8_t { 255 });
+}
+
+TEST (texture_decodes_jpeg_texb) {
+    const auto bytes = make_jpeg_texture (2, 2);
+
+    auto texture = scene::decode_texture (bytes);
+    CHECK (texture.has_value ());
+    CHECK_EQ (texture->width, 2);
+    CHECK_EQ (texture->height, 2);
+    CHECK_EQ (texture->rgba.size (), std::size_t { 16 });
+    CHECK (texture->rgba[0] > 100);
 }
 
 TEST (texture_decodes_dxt1_blocks) {
@@ -489,18 +576,19 @@ TEST (scene_layer_origin_uses_scene_coordinates) {
     const std::array<std::uint8_t, 4> white = { 255, 255, 255, 255 };
     we::test::write_bytes (temp / "textures/white.tex", make_argb_texture (1, 1, white));
 
-    // 20x20 quad centred on scene coordinate (60, 30): scene y grows downward.
-    const auto inside = render_scene_pixel (temp.path (), 100, 60, 30);
+    // 20x20 quad centred on scene coordinate (60, 30): scene y grows upward from the bottom.
+    // In top-down image coordinates (Surface::read_rgba), y=30 from bottom is y=70 from top.
+    const auto inside = render_scene_pixel (temp.path (), 100, 60, 70);
     CHECK (inside[0] > 200);
     CHECK (inside[1] > 200);
     CHECK (inside[2] > 200);
 
-    const auto left_of_quad = render_scene_pixel (temp.path (), 100, 30, 30);
+    const auto left_of_quad = render_scene_pixel (temp.path (), 100, 30, 70);
     CHECK (left_of_quad[0] > 200);
     CHECK (left_of_quad[1] < 60);
     CHECK (left_of_quad[2] < 60);
 
-    const auto below_quad = render_scene_pixel (temp.path (), 100, 60, 60);
+    const auto below_quad = render_scene_pixel (temp.path (), 100, 60, 40);
     CHECK (below_quad[1] < 60);
     CHECK (below_quad[2] < 60);
 }
@@ -548,16 +636,16 @@ TEST (scene_layer_angles_rotate_quad_clockwise) {
 
     we::test::write_bytes (temp / "textures/quad.tex", make_argb_texture (4, 2, pixels));
 
-    // angles are radians: 1.5708 turns the 40x10 quad 90 degrees clockwise in
-    // scene space, so the texture's left (red) edge ends up at the top.
+    // angles are radians: 1.5708 turns the 40x10 quad 90 degrees in
+    // scene space, so the texture's right (green) edge rotates to the top.
     const auto top = render_scene_pixel (temp.path (), 100, 50, 35);
-    CHECK (top[0] > 200);
-    CHECK (top[1] < 60);
+    CHECK (top[0] < 60);
+    CHECK (top[1] > 200);
     CHECK (top[2] < 60);
 
     const auto bottom = render_scene_pixel (temp.path (), 100, 50, 65);
-    CHECK (bottom[0] < 60);
-    CHECK (bottom[1] > 200);
+    CHECK (bottom[0] > 200);
+    CHECK (bottom[1] < 60);
     CHECK (bottom[2] < 60);
 
     // The unrotated rectangle would cover (25, 50); after the rotation it does not.
@@ -1133,7 +1221,9 @@ TEST (video_layer_reports_frame_changes_from_mp4_texture) {
     CHECK (surface.has_value ());
     context->make_current (&*surface);
 
-    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets);
+    scene::SceneRendererOptions options;
+    options.hardware_decode = false;
+    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets, options);
     CHECK (scene_renderer.has_value ());
     CHECK_EQ (scene_renderer->layer_count (), std::size_t { 1 });
 
@@ -1149,6 +1239,48 @@ TEST (video_layer_reports_frame_changes_from_mp4_texture) {
 
     // Once a frame is uploaded, the layer keeps its decoded size.
     scene_renderer->report_video_swap ();
+}
+
+TEST (video_player_software_decode_loads_and_updates) {
+    std::ifstream fixture (std::filesystem::path (WE_TEST_FIXTURES_DIR) / "testsrc.mp4", std::ios::binary);
+    CHECK (fixture.good ());
+    const std::string raw { std::istreambuf_iterator<char> (fixture), std::istreambuf_iterator<char> () };
+    std::vector<std::byte> mp4;
+    mp4.reserve (raw.size ());
+
+    for (const char character : raw) {
+	mp4.push_back (static_cast<std::byte> (static_cast<unsigned char> (character)));
+    }
+    CHECK (!mp4.empty ());
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    scene::VideoOptions options;
+    options.hardware_decode = false;
+    auto player = scene::VideoPlayer::create (options);
+    CHECK (player.has_value ());
+
+    auto loaded = (*player)->load (mp4, "testsrc.mp4");
+    CHECK (loaded.has_value ());
+    (*player)->set_loop (true);
+    (*player)->play ();
+
+    bool changed = false;
+    for (int attempt = 0; attempt < 200 && !changed; ++attempt) {
+	changed = (*player)->update ();
+	if (!changed) {
+	    std::this_thread::sleep_for (std::chrono::milliseconds (10));
+	}
+    }
+    CHECK (changed);
+    CHECK ((*player)->ready ());
+    CHECK ((*player)->width () > 0);
+    CHECK ((*player)->height () > 0);
+    (*player)->report_swap ();
 }
 
 TEST (scene_post_processing_layer_count) {
@@ -1537,6 +1669,371 @@ TEST (scene_reflection_with_post_processing) {
     CHECK (at (100, 100, 2) < 20);
 }
 
+TEST (scene_effect_pass_mask_texture_and_previous_bind) {
+    we::test::TempDir temp;
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+            "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+            "general": {"orthogonalprojection": {"width": 100, "height": 100}, "clearcolor": [0,0,0]},
+            "objects": [
+                {
+                    "id": 1, "name": "white_bg", "image": "models/bg.json",
+                    "origin": [50,50,0], "scale": [1,1,1], "size": [100,100], "visible": true
+                },
+                {
+                    "id": 2, "name": "masked_effect", "image": "models/post.json",
+                    "origin": [50,50,0], "scale": [1,1,1], "size": [100,100], "visible": true,
+                    "effects": [{
+                        "file": "effects/mask_test/effect.json"
+                    }]
+                }
+            ]
+        })"
+    );
+    we::test::write_text (temp / "models/bg.json", R"({"material":"materials/bg.json"})");
+    we::test::write_text (
+	temp / "materials/bg.json", R"({"passes":[{"shader":"genericimage","textures":["textures/white.tex"]}]})"
+    );
+    const std::array<std::uint8_t, 4> white = { 255, 255, 255, 255 };
+    we::test::write_bytes (temp / "textures/white.tex", make_argb_texture (1, 1, white));
+
+    we::test::write_text (temp / "models/post.json", R"({"material":"materials/post.json","fullscreen":true})");
+    we::test::write_text (
+	temp / "materials/post.json", R"({"passes":[{"shader":"passthrough","textures":["_rt_FullFrameBuffer"]}]})"
+    );
+    we::test::write_text (
+	temp / "effects/mask_test/effect.json",
+	R"({"passes":[{"material":"materials/effects/mask_test.json","bind":[{"name":"previous","index":0}]}]})"
+    );
+    we::test::write_text (
+	temp / "materials/effects/mask_test.json",
+	R"({"passes":[{"shader":"effects/mask_test","textures":["_rt_FullFrameBuffer","textures/mask.tex"]}]})"
+    );
+    // 2x1 texture: left pixel white (255), right pixel black (0)
+    const std::array<std::uint8_t, 8> mask_pixels = { 255, 255, 255, 255, 0, 0, 0, 255 };
+    we::test::write_bytes (temp / "textures/mask.tex", make_argb_texture (2, 1, mask_pixels));
+
+    we::test::write_text (
+	temp / "shaders/effects/mask_test.vert",
+	"attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\nvarying vec2 v_TexCoord;\nvoid main() { gl_Position = "
+	"vec4(a_Position, 1.0); v_TexCoord = a_TexCoord; }\n"
+    );
+    we::test::write_text (
+	temp / "shaders/effects/mask_test.frag",
+	"varying vec2 v_TexCoord;\n"
+	"void main() {\n"
+	"    vec4 prev = texSample2D(g_Texture0, v_TexCoord);\n"
+	"    vec4 mask = texSample2D(g_Texture1, v_TexCoord);\n"
+	"    gl_FragColor = prev * mask.r;\n"
+	"}\n"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = gfx::Renderer::create ();
+    CHECK (renderer.has_value ());
+    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (scene_renderer.has_value ());
+
+    renderer->begin (100, 100, scene_renderer->clear_color ());
+    scene_renderer->render (*renderer);
+    renderer->end ();
+
+    std::vector<std::uint8_t> output (100U * 100U * 4U);
+    surface->read_rgba (output, 100, 100);
+
+    const auto at = [&output] (int x, int y, int channel) {
+	return output
+	    [(static_cast<std::size_t> (y) * 100U + static_cast<std::size_t> (x)) * 4U
+	     + static_cast<std::size_t> (channel)];
+    };
+
+    // Left side (x=20) is unmasked (white bg preserved)
+    CHECK (at (20, 50, 0) > 200);
+    CHECK (at (20, 50, 1) > 200);
+    CHECK (at (20, 50, 2) > 200);
+
+    // Right side (x=80) is masked out by g_Texture1 (black)
+    CHECK (at (80, 50, 0) < 30);
+    CHECK (at (80, 50, 1) < 30);
+    CHECK (at (80, 50, 2) < 30);
+}
+
+TEST (scene_effect_pass_additive_blending_preserves_previous_composite) {
+    we::test::TempDir temp;
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+            "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+            "general": {"orthogonalprojection": {"width": 100, "height": 100}, "clearcolor": [0,0,0]},
+            "objects": [
+                {
+                    "id": 1, "name": "base_layer", "image": "models/bg.json",
+                    "origin": [50,50,0], "scale": [1,1,1], "size": [100,100], "visible": true
+                },
+                {
+                    "id": 2, "name": "add_effect", "image": "models/post.json",
+                    "origin": [50,50,0], "scale": [1,1,1], "size": [100,100], "visible": true,
+                    "effects": [{
+                        "file": "effects/add/effect.json"
+                    }]
+                }
+            ]
+        })"
+    );
+    we::test::write_text (temp / "models/bg.json", R"({"material":"materials/bg.json"})");
+    we::test::write_text (
+	temp / "materials/bg.json", R"({"passes":[{"shader":"genericimage","textures":["textures/color.tex"]}]})"
+    );
+    // Base color: green=120, blue=240, red=0
+    const std::array<std::uint8_t, 4> color = { 0, 120, 240, 255 };
+    we::test::write_bytes (temp / "textures/color.tex", make_argb_texture (1, 1, color));
+
+    we::test::write_text (temp / "models/post.json", R"({"material":"materials/post.json","fullscreen":true})");
+    we::test::write_text (
+	temp / "materials/post.json", R"({"passes":[{"shader":"passthrough","textures":["_rt_FullFrameBuffer"]}]})"
+    );
+    we::test::write_text (
+	temp / "effects/add/effect.json", R"({"passes":[{"material":"materials/effects/add.json"}]})"
+    );
+    we::test::write_text (
+	temp / "materials/effects/add.json", R"({"passes":[{"shader":"effects/add","blending":"additive"}]})"
+    );
+
+    we::test::write_text (
+	temp / "shaders/effects/add.vert",
+	"attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\nvarying vec2 v_TexCoord;\nvoid main() { gl_Position = "
+	"vec4(a_Position, 1.0); v_TexCoord = a_TexCoord; }\n"
+    );
+    // Add pure red (1.0, 0.0, 0.0) on top of existing composite
+    we::test::write_text (
+	temp / "shaders/effects/add.frag",
+	"varying vec2 v_TexCoord;\n"
+	"void main() {\n"
+	"    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+	"}\n"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = gfx::Renderer::create ();
+    CHECK (renderer.has_value ());
+    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (scene_renderer.has_value ());
+
+    renderer->begin (100, 100, scene_renderer->clear_color ());
+    scene_renderer->render (*renderer);
+    renderer->end ();
+
+    std::vector<std::uint8_t> output (100U * 100U * 4U);
+    surface->read_rgba (output, 100, 100);
+
+    const auto at = [&output] (int x, int y, int channel) {
+	return output
+	    [(static_cast<std::size_t> (y) * 100U + static_cast<std::size_t> (x)) * 4U
+	     + static_cast<std::size_t> (channel)];
+    };
+
+    // Red added: 0 + 255 = 255
+    CHECK (at (50, 50, 0) > 240);
+    // Green preserved from previous composite by blit: ~120
+    CHECK (std::abs (static_cast<int> (at (50, 50, 1)) - 120) < 15);
+    // Blue preserved from previous composite by blit: ~240
+    CHECK (std::abs (static_cast<int> (at (50, 50, 2)) - 240) < 15);
+}
+
+TEST (scene_shader_include_guards_prevent_multiple_inclusion) {
+    we::test::TempDir temp;
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+            "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+            "general": {"orthogonalprojection": {"width": 100, "height": 100}, "clearcolor": [0,0,0]},
+            "objects": [
+                {
+                    "id": 1, "name": "inc_post", "image": "models/post.json",
+                    "origin": [50,50,0], "scale": [1,1,1], "size": [100,100], "visible": true,
+                    "effects": [{
+                        "file": "effects/inc/effect.json"
+                    }]
+                }
+            ]
+        })"
+    );
+    we::test::write_text (temp / "models/post.json", R"({"material":"materials/post.json","fullscreen":true})");
+    we::test::write_text (
+	temp / "materials/post.json", R"({"passes":[{"shader":"passthrough","textures":["_rt_FullFrameBuffer"]}]})"
+    );
+    we::test::write_text (
+	temp / "effects/inc/effect.json", R"({"passes":[{"material":"materials/effects/inc.json"}]})"
+    );
+    we::test::write_text (temp / "materials/effects/inc.json", R"({"passes":[{"shader":"effects/inc"}]})");
+    we::test::write_text (temp / "shaders/common.h", "float compute_sample() { return 1.0; }\n");
+    we::test::write_text (
+	temp / "shaders/helper.h", "#include \"common.h\"\nfloat helper_sample() { return compute_sample(); }\n"
+    );
+
+    we::test::write_text (
+	temp / "shaders/effects/inc.vert",
+	"attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\nvarying vec2 v_TexCoord;\nvoid main() { gl_Position = "
+	"vec4(a_Position, 1.0); v_TexCoord = a_TexCoord; }\n"
+    );
+    we::test::write_text (
+	temp / "shaders/effects/inc.frag",
+	"#include \"common.h\"\n"
+	"#include \"helper.h\"\n"
+	"varying vec2 v_TexCoord;\n"
+	"void main() {\n"
+	"    float val = compute_sample() * helper_sample();\n"
+	"    gl_FragColor = vec4(val, 0.0, 0.0, 1.0);\n"
+	"}\n"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = gfx::Renderer::create ();
+    CHECK (renderer.has_value ());
+    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (scene_renderer.has_value ());
+
+    renderer->begin (100, 100, scene_renderer->clear_color ());
+    scene_renderer->render (*renderer);
+    renderer->end ();
+
+    std::vector<std::uint8_t> output (100U * 100U * 4U);
+    surface->read_rgba (output, 100, 100);
+
+    const auto at = [&output] (int x, int y, int channel) {
+	return output
+	    [(static_cast<std::size_t> (y) * 100U + static_cast<std::size_t> (x)) * 4U
+	     + static_cast<std::size_t> (channel)];
+    };
+
+    CHECK (at (50, 50, 0) > 200);
+}
+
+TEST (scene_effect_pass_tex0format_and_material_constants) {
+    we::test::TempDir temp;
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+            "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+            "general": {"orthogonalprojection": {"width": 100, "height": 100}, "clearcolor": [0,0,0]},
+            "objects": [
+                {
+                    "id": 1, "name": "rg88_effect", "image": "models/post.json",
+                    "origin": [50,50,0], "scale": [1,1,1], "size": [100,100], "visible": true,
+                    "effects": [{
+                        "file": "effects/rg88/effect.json"
+                    }]
+                }
+            ]
+        })"
+    );
+    we::test::write_text (temp / "models/post.json", R"({"material":"materials/post.json","fullscreen":true})");
+    we::test::write_text (
+	temp / "materials/post.json", R"({"passes":[{"shader":"passthrough","textures":["_rt_FullFrameBuffer"]}]})"
+    );
+    we::test::write_text (
+	temp / "effects/rg88/effect.json", R"({"passes":[{"material":"materials/effects/rg88.json"}]})"
+    );
+    we::test::write_text (
+	temp / "materials/effects/rg88.json",
+	R"({
+            "passes": [{
+                "shader": "effects/rg88",
+                "textures": ["textures/rg88.tex"],
+                "constantshadervalues": {
+                    "base_val": 0.8
+                }
+            }]
+        })"
+    );
+    const std::array<std::uint8_t, 2> rg = { 100, 200 };
+    we::test::write_bytes (temp / "textures/rg88.tex", make_rg88_texture (1, 1, rg, 0));
+
+    we::test::write_text (
+	temp / "shaders/effects/rg88.vert",
+	"attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\nvarying vec2 v_TexCoord;\nvoid main() { gl_Position = "
+	"vec4(a_Position, 1.0); v_TexCoord = a_TexCoord; }\n"
+    );
+    we::test::write_text (
+	temp / "shaders/effects/rg88.frag",
+	"varying vec2 v_TexCoord;\n"
+	"uniform float base_val;\n"
+	"void main() {\n"
+	"#if TEX0FORMAT == 8\n"
+	"    gl_FragColor = vec4(0.0, base_val, 0.0, 1.0);\n"
+	"#else\n"
+	"    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);\n"
+	"#endif\n"
+	"}\n"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = gfx::Renderer::create ();
+    CHECK (renderer.has_value ());
+    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (scene_renderer.has_value ());
+
+    renderer->begin (100, 100, scene_renderer->clear_color ());
+    scene_renderer->render (*renderer);
+    renderer->end ();
+
+    std::vector<std::uint8_t> output (100U * 100U * 4U);
+    surface->read_rgba (output, 100, 100);
+
+    const auto at = [&output] (int x, int y, int channel) {
+	return output
+	    [(static_cast<std::size_t> (y) * 100U + static_cast<std::size_t> (x)) * 4U
+	     + static_cast<std::size_t> (channel)];
+    };
+
+    // TEX0FORMAT == 8 injected correctly -> red is 0
+    CHECK (at (50, 50, 0) == 0);
+    // base_val from material constantshadervalues (0.8 * 255 = 204) -> green ~ 204
+    CHECK (std::abs (static_cast<int> (at (50, 50, 1)) - 204) < 10);
+    CHECK (at (50, 50, 2) == 0);
+}
+
 TEST (scene_particle_system_renders_particles) {
     we::test::TempDir temp;
 
@@ -1613,4 +2110,559 @@ TEST (scene_particle_system_renders_particles) {
 	}
     }
     CHECK (non_zero_pixels > 0);
+}
+
+TEST (particle_physics_gravity_and_inversion) {
+    scene::ParticleSystemState ps;
+    ps.origin = { 0.0F, 0.0F, 0.0F };
+
+    // 1. Wallpaper Engine has origin at top-left with +Y down.
+    // In WE, a downward gravity is positive Y (e.g. gravity = [0, 980, 0]).
+    // The engine's world space is centered with +Y up.
+    // Therefore, in movement operator:
+    // p.velocity.y += -op.gravity.y * dt * speed;
+    // Positive WE gravity.y must accelerate particles downward (-Y in world space).
+    scene::ParticleOperatorDef move_op;
+    move_op.name = "movement";
+    move_op.type = scene::OperatorType::movement;
+    move_op.gravity = { 0.0F, 200.0F, 0.0F };
+    ps.operators.push_back (move_op);
+
+    scene::ParticleInstance p;
+    p.alive = true;
+    p.position = { 0.0F, 0.0F, 0.0F };
+    p.velocity = { 0.0F, 0.0F, 0.0F };
+    p.lifetime = 10.0F;
+    p.age = 0.0F;
+    ps.particles.push_back (p);
+
+    // Simulate 10 frames of 0.1s
+    for (int i = 0; i < 10; ++i) {
+	ps.update (0.1F, static_cast<float> (i) * 0.1F);
+    }
+
+    // Velocity and position Y must be negative (falling down towards ground in world space)
+    CHECK (ps.particles[0].velocity.y < 0.0F);
+    CHECK (ps.particles[0].position.y < 0.0F);
+
+    // 2. Initializer velocity_random: WE positive Y velocity must be inverted to downward (-Y)
+    scene::ParticleSystemState ps_vel;
+    scene::ParticleEmitterDef emitter;
+    emitter.type = scene::EmitterType::box_random;
+    emitter.distance_min = {};
+    emitter.distance_max = {};
+    emitter.instantaneous = 1;
+    ps_vel.emitters.push_back (emitter);
+    ps_vel.emitter_timers.push_back (0.0F);
+    ps_vel.emitter_instantaneous_done.push_back (false);
+
+    scene::ParticleInitializerDef vel_init;
+    vel_init.name = "velocityrandom";
+    vel_init.type = scene::InitializerType::velocity_random;
+    vel_init.min_vec = { 0.0F, 100.0F, 0.0F };
+    vel_init.max_vec = { 0.0F, 100.0F, 0.0F };
+    ps_vel.initializers.push_back (vel_init);
+
+    ps_vel.update (0.01F, 0.01F);
+    CHECK_EQ (ps_vel.particles.size (), std::size_t { 1 });
+    // Inverted Y: 100.0F in WE becomes -100.0F in world space
+    CHECK (ps_vel.particles[0].velocity.y < -99.0F);
+
+    // 3. Oscillate position must oscillate around base position without cumulative drift
+    scene::ParticleSystemState ps_osc;
+    scene::ParticleOperatorDef osc_op;
+    osc_op.name = "oscillateposition";
+    osc_op.type = scene::OperatorType::oscillate_position;
+    osc_op.frequency_min = 2.0F;
+    osc_op.frequency_max = 2.0F;
+    osc_op.scale_min = 10.0F;
+    osc_op.scale_max = 10.0F;
+    osc_op.phase_min = 0.0F;
+    osc_op.phase_max = 0.0F;
+    osc_op.mask = { 1.0F, 1.0F, 0.0F };
+    ps_osc.operators.push_back (osc_op);
+
+    scene::ParticleInstance p_osc;
+    p_osc.alive = true;
+    p_osc.position = { 0.0F, 0.0F, 0.0F };
+    p_osc.lifetime = 100.0F;
+    ps_osc.particles.push_back (p_osc);
+
+    // Over 100 steps of 0.05s, position must stay strictly within [-10, 10]
+    for (int step = 0; step < 100; ++step) {
+	ps_osc.update (0.05F, static_cast<float> (step) * 0.05F);
+	CHECK (std::abs (ps_osc.particles[0].position.x) <= 10.001F);
+	CHECK (std::abs (ps_osc.particles[0].position.y) <= 10.001F);
+    }
+}
+
+TEST (particle_system_spritesheet_uv_animation) {
+    scene::ParticleSystemState ps;
+    ps.texture_width = 128;
+    ps.texture_height = 128;
+    ps.duration = 1.0F;
+    ps.sequence_multiplier = 1.0F;
+    ps.animation_mode = "sequence";
+
+    // 4 frames in a 2x2 spritesheet (each frame is 64x64)
+    // Frame 0: (0, 0, 64, 64) -> UV (0, 0, 0.5, 0.5)
+    // Frame 1: (64, 0, 64, 64) -> UV (0.5, 0, 0.5, 0.5)
+    // Frame 2: (0, 64, 64, 64) -> UV (0, 0.5, 0.5, 0.5)
+    // Frame 3: (64, 64, 64, 64) -> UV (0.5, 0.5, 0.5, 0.5)
+    ps.frames.push_back ({ .frametime = 0.25F, .x = 0.0F, .y = 0.0F, .width = 64.0F, .height = 64.0F });
+    ps.frames.push_back ({ .frametime = 0.25F, .x = 64.0F, .y = 0.0F, .width = 64.0F, .height = 64.0F });
+    ps.frames.push_back ({ .frametime = 0.25F, .x = 0.0F, .y = 64.0F, .width = 64.0F, .height = 64.0F });
+    ps.frames.push_back ({ .frametime = 0.25F, .x = 64.0F, .y = 64.0F, .width = 64.0F, .height = 64.0F });
+
+    CHECK (ps.has_animation ());
+
+    scene::ParticleInstance p;
+    p.alive = true;
+    p.lifetime = 2.0F;
+
+    // At age = 0.1s (< 0.25s), frame 0
+    p.age = 0.1F;
+    auto uv0 = ps.get_particle_uv (p);
+    CHECK (std::abs (uv0.x - 0.0F) < 1.0e-4F);
+    CHECK (std::abs (uv0.y - 0.0F) < 1.0e-4F);
+    CHECK (std::abs (uv0.width - 0.5F) < 1.0e-4F);
+    CHECK (std::abs (uv0.height - 0.5F) < 1.0e-4F);
+
+    // At age = 0.35s (between 0.25 and 0.50), frame 1
+    p.age = 0.35F;
+    auto uv1 = ps.get_particle_uv (p);
+    CHECK (std::abs (uv1.x - 0.5F) < 1.0e-4F);
+    CHECK (std::abs (uv1.y - 0.0F) < 1.0e-4F);
+
+    // At age = 0.60s (between 0.50 and 0.75), frame 2
+    p.age = 0.60F;
+    auto uv2 = ps.get_particle_uv (p);
+    CHECK (std::abs (uv2.x - 0.0F) < 1.0e-4F);
+    CHECK (std::abs (uv2.y - 0.5F) < 1.0e-4F);
+
+    // At age = 0.85s (between 0.75 and 1.00), frame 3
+    p.age = 0.85F;
+    auto uv3 = ps.get_particle_uv (p);
+    CHECK (std::abs (uv3.x - 0.5F) < 1.0e-4F);
+    CHECK (std::abs (uv3.y - 0.5F) < 1.0e-4F);
+
+    // Looping past duration: age = 1.1s -> time_in_cycle = 0.1s -> frame 0
+    p.age = 1.1F;
+    auto uv_loop = ps.get_particle_uv (p);
+    CHECK (std::abs (uv_loop.x - 0.0F) < 1.0e-4F);
+    CHECK (std::abs (uv_loop.y - 0.0F) < 1.0e-4F);
+
+    // Mode "randomframe"
+    ps.animation_mode = "randomframe";
+    p.random_frame = 2;
+    auto uv_rand = ps.get_particle_uv (p);
+    CHECK (std::abs (uv_rand.x - 0.0F) < 1.0e-4F);
+    CHECK (std::abs (uv_rand.y - 0.5F) < 1.0e-4F);
+
+    // Mode "once"
+    ps.animation_mode = "once";
+    p.age = 1.0F; // 50% of lifetime (2.0s) -> frame 2
+    auto uv_once = ps.get_particle_uv (p);
+    CHECK (std::abs (uv_once.x - 0.0F) < 1.0e-4F);
+    CHECK (std::abs (uv_once.y - 0.5F) < 1.0e-4F);
+
+    // Empty frames fallback to full rect
+    ps.frames.clear ();
+    CHECK (!ps.has_animation ());
+    auto uv_empty = ps.get_particle_uv (p);
+    CHECK_EQ (uv_empty.x, 0.0F);
+    CHECK_EQ (uv_empty.y, 0.0F);
+    CHECK_EQ (uv_empty.width, 1.0F);
+    CHECK_EQ (uv_empty.height, 1.0F);
+}
+
+TEST (scene_camera_parallax_parsing_and_layer_displacement) {
+    we::test::TempDir temp;
+    write_project (temp.path (), "textures/white.tex");
+
+    const std::array<std::uint8_t, 4> white = { 255, 255, 255, 255 };
+    we::test::write_bytes (temp / "textures/white.tex", make_argb_texture (1, 1, white));
+
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+	    "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+	    "general": {
+		"cameraparallax": true,
+		"cameraparallaxamount": 0.5,
+		"cameraparallaxdelay": 0.0,
+		"cameraparallaxmouseinfluence": 2.0,
+		"orthogonalprojection": {"auto": false, "width": 100, "height": 100}
+	    },
+	    "objects": [
+		{
+		    "image": "models/layer.json",
+		    "parallaxDepth": "0.5 0.5",
+		    "origin": "50 50 0",
+		    "size": "20 20"
+		},
+		{
+		    "image": "models/layer.json",
+		    "parallaxDepth": "-0.5 -0.5",
+		    "origin": "50 50 0",
+		    "size": "20 20"
+		}
+	    ]
+	})"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+    CHECK (parsed->camera.parallax_enabled);
+    CHECK_EQ (parsed->camera.parallax_amount, 0.5F);
+    CHECK_EQ (parsed->camera.parallax_delay, 0.0F);
+    CHECK_EQ (parsed->camera.parallax_mouse_influence, 2.0F);
+    CHECK_EQ (parsed->images.size (), std::size_t { 2 });
+    CHECK_EQ (parsed->images[0].parallax_depth.x, 0.5F);
+    CHECK_EQ (parsed->images[0].parallax_depth.y, 0.5F);
+    CHECK_EQ (parsed->images[1].parallax_depth.x, -0.5F);
+    CHECK_EQ (parsed->images[1].parallax_depth.y, -0.5F);
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (renderer.has_value ());
+    CHECK_EQ (renderer->layer_count (), std::size_t { 2 });
+
+    const auto base0 = renderer->layer_base_corners (0);
+    const auto base1 = renderer->layer_base_corners (1);
+    CHECK_EQ (renderer->layer_corners (0)[0].x, base0[0].x);
+    CHECK_EQ (renderer->layer_corners (1)[0].x, base1[0].x);
+
+    // Update with cursor to the right (x=1.0, y=0.5 -> cx=0.5, cy=0.0).
+    // Target = cx * influence = 0.5 * 2.0 = 1.0. Delay=0 -> displacement = 1.0.
+    // Layer 0: offset_x = (0.5 + 0.5) * 1.0 * 100 = 100.
+    // Layer 1: offset_x = (-0.5 + 0.5) * 1.0 * 100 = 0.
+    renderer->update_input (core::Vec2 { 1.0F, 0.5F }, 0.016F);
+    CHECK_EQ (renderer->parallax_displacement ().x, 1.0F);
+    CHECK_EQ (renderer->parallax_displacement ().y, 0.0F);
+
+    CHECK_EQ (renderer->layer_corners (0)[0].x, base0[0].x + 100.0F);
+    CHECK_EQ (renderer->layer_corners (0)[0].y, base0[0].y);
+    CHECK_EQ (renderer->layer_corners (1)[0].x, base1[0].x);
+    CHECK_EQ (renderer->layer_corners (1)[0].y, base1[0].y);
+
+    // Resetting cursor without input centres back to 0.
+    renderer->update_input (std::nullopt, 0.016F);
+    CHECK_EQ (renderer->parallax_displacement ().x, 0.0F);
+    CHECK_EQ (renderer->parallax_displacement ().y, 0.0F);
+    CHECK_EQ (renderer->layer_corners (0)[0].x, base0[0].x);
+    CHECK_EQ (renderer->layer_corners (1)[0].x, base1[0].x);
+}
+
+TEST (scene_sound_layer_parsing) {
+    we::test::TempDir temp;
+    write_project (temp.path ());
+
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+	    "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+	    "general": {
+		"orthogonalprojection": {"auto": false, "width": 100, "height": 100}
+	    },
+	    "objects": [
+		{
+		    "name": "BGM Loop",
+		    "sound": "sounds/bgm.mp3",
+		    "playbackmode": "loop",
+		    "volume": 0.8
+		},
+		{
+		    "name": "Ambient Playlist",
+		    "sound": ["sounds/rain.ogg", "sounds/thunder.ogg"],
+		    "playbackmode": "random",
+		    "volume": 0.5
+		}
+	    ]
+	})"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+    CHECK_EQ (parsed->sounds.size (), std::size_t { 2 });
+    CHECK_EQ (parsed->skipped_objects, 0);
+
+    const auto& sound0 = parsed->sounds[0];
+    CHECK_EQ (sound0.name, std::string ("BGM Loop"));
+    CHECK_EQ (sound0.files.size (), std::size_t { 1 });
+    CHECK_EQ (sound0.files[0], std::string ("sounds/bgm.mp3"));
+    CHECK_EQ (sound0.playback_mode, std::string ("loop"));
+    CHECK_EQ (sound0.volume, 0.8F);
+
+    const auto& sound1 = parsed->sounds[1];
+    CHECK_EQ (sound1.name, std::string ("Ambient Playlist"));
+    CHECK_EQ (sound1.files.size (), std::size_t { 2 });
+    CHECK_EQ (sound1.files[0], std::string ("sounds/rain.ogg"));
+    CHECK_EQ (sound1.files[1], std::string ("sounds/thunder.ogg"));
+    CHECK_EQ (sound1.playback_mode, std::string ("random"));
+    CHECK_EQ (sound1.volume, 0.5F);
+}
+
+TEST (scene_layer_spritesheet_uv_animation) {
+    we::test::TempDir temp;
+    write_project (temp.path (), "textures/anim.tex");
+
+    // Texture 64x128 with 2 frames of 64x64 stacked vertically:
+    // Frame 0 (top): Red pixels (255, 0, 0, 255)
+    // Frame 1 (bottom): Green pixels (0, 255, 0, 255)
+    std::vector<std::uint8_t> pixels (64 * 128 * 4, 0);
+    for (std::size_t y = 0; y < 64; ++y) {
+	for (std::size_t x = 0; x < 64; ++x) {
+	    const std::size_t idx = (y * 64 + x) * 4;
+	    pixels[idx + 0] = 255;
+	    pixels[idx + 1] = 0;
+	    pixels[idx + 2] = 0;
+	    pixels[idx + 3] = 255;
+	}
+    }
+    for (std::size_t y = 64; y < 128; ++y) {
+	for (std::size_t x = 0; x < 64; ++x) {
+	    const std::size_t idx = (y * 64 + x) * 4;
+	    pixels[idx + 0] = 0;
+	    pixels[idx + 1] = 255;
+	    pixels[idx + 2] = 0;
+	    pixels[idx + 3] = 255;
+	}
+    }
+
+    std::array<TestFrame, 2> frames = {
+	TestFrame { .frametime = 0.5F, .x = 0.0F, .y = 0.0F, .width = 64.0F, .height = 64.0F },
+	TestFrame { .frametime = 0.5F, .x = 0.0F, .y = 64.0F, .width = 64.0F, .height = 64.0F },
+    };
+
+    we::test::write_bytes (temp / "textures/anim.tex", make_animated_argb_texture (64, 128, pixels, frames));
+
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+	    "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+	    "general": {
+		"orthogonalprojection": {"auto": false, "width": 100, "height": 100}
+	    },
+	    "objects": [
+		{
+		    "image": "models/layer.json",
+		    "origin": "50 50 0",
+		    "size": "50 50"
+		}
+	    ]
+	})"
+    );
+    we::test::write_text (temp / "models/layer.json", R"({"material":"materials/layer.json"})");
+    we::test::write_text (
+	temp / "materials/layer.json",
+	R"({"passes":[{"shader":"genericimage4","textures":["textures/anim.tex"],"blending":"translucent"}]})"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (renderer.has_value ());
+    CHECK_EQ (renderer->layer_count (), std::size_t { 1 });
+    CHECK_EQ (renderer->layer_frame_count (0), std::size_t { 2 });
+    CHECK_EQ (renderer->layer_blend (0), gfx::BlendMode::translucent);
+
+    // Initial UV (frame 0)
+    const auto uv0 = renderer->layer_uv (0, 0.0F);
+    CHECK_EQ (uv0.x, 0.0F);
+    CHECK_EQ (uv0.y, 0.0F);
+    CHECK_EQ (uv0.width, 1.0F);
+    CHECK_EQ (uv0.height, 0.5F);
+
+    // Frame 0 at 0.25s
+    const auto uv_mid0 = renderer->layer_uv (0, 0.25F);
+    CHECK_EQ (uv_mid0.y, 0.0F);
+
+    // Frame 1 at 0.75s (second frame in 64x128 starts at y=64 -> 64/128 = 0.5)
+    const auto uv1 = renderer->layer_uv (0, 0.75F);
+    CHECK_EQ (uv1.x, 0.0F);
+    CHECK_EQ (uv1.y, 0.5F);
+    CHECK_EQ (uv1.width, 1.0F);
+    CHECK_EQ (uv1.height, 0.5F);
+
+    // Wrap around at 1.25s back to frame 0
+    const auto uv_wrap = renderer->layer_uv (0, 1.25F);
+    CHECK_EQ (uv_wrap.y, 0.0F);
+}
+
+TEST (scene_camera_framing_and_aspect_ratio_lucy) {
+    we::test::TempDir temp;
+    write_project (temp.path (), "textures/white.tex");
+
+    const std::array<std::uint8_t, 4> white = { 255, 255, 255, 255 };
+    we::test::write_bytes (temp / "textures/white.tex", make_argb_texture (1, 1, white));
+
+    // Scene matching Cyberpunk 2077 Lucy (ID 3615154110) parameters:
+    // Resolution: 3840x2160, character origin (2603.11, 377.94), size (1080, 607), scale 2.43127
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+	    "camera": {
+		"center": "-2.57752 -2.36454 -1.00000",
+		"eye": "-2.57752 -2.36454 0.00000",
+		"up": "0.00000 1.00000 0.00000"
+	    },
+	    "general": {
+		"cameraparallax": true,
+		"cameraparallaxamount": 0.01,
+		"cameraparallaxdelay": 0.0,
+		"cameraparallaxmouseinfluence": 0.5,
+		"orthogonalprojection": {"width": 3840, "height": 2160}
+	    },
+	    "objects": [
+		{
+		    "id": 54,
+		    "name": "LUCY KUSHINADA",
+		    "image": "models/layer.json",
+		    "origin": "2603.11499 377.94037 0.00000",
+		    "scale": "2.43127 2.43127 2.43127",
+		    "size": "1080.00000 607.00000"
+		}
+	    ]
+	})"
+    );
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+    CHECK_EQ (parsed->camera.width, 3840);
+    CHECK_EQ (parsed->camera.height, 2160);
+    CHECK (parsed->camera.parallax_enabled);
+    CHECK (std::abs (parsed->camera.parallax_amount - 0.01F) < 1.0e-5F);
+    CHECK (std::abs (parsed->camera.parallax_mouse_influence - 0.5F) < 1.0e-5F);
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (1920, 1080);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (renderer.has_value ());
+    CHECK_EQ (renderer->scene_width (), 3840);
+    CHECK_EQ (renderer->scene_height (), 2160);
+    CHECK_EQ (renderer->layer_count (), std::size_t { 1 });
+
+    // Canonical transform check:
+    // Origin in scene space is (2603.11, 377.94).
+    // In centered world space: x = 2603.11 - 1920 = 683.11, y = 377.94 - 1080 = -702.06.
+    // Half dimensions: half_w = 1080 * 2.43127 * 0.5 = 1312.8858.
+    //                  half_h = 607 * 2.43127 * 0.5 = 737.8904.
+    const auto base_corners = renderer->layer_base_corners (0);
+    const float expected_left = 2603.11499F - 1920.0F - (1080.0F * 2.43127F * 0.5F);
+    const float expected_right = 2603.11499F - 1920.0F + (1080.0F * 2.43127F * 0.5F);
+    const float expected_top = 377.94037F - 1080.0F + (607.0F * 2.43127F * 0.5F);
+    const float expected_bottom = 377.94037F - 1080.0F - (607.0F * 2.43127F * 0.5F);
+
+    CHECK (std::abs (base_corners[0].x - expected_left) < 0.1F);
+    CHECK (std::abs (base_corners[0].y - expected_top) < 0.1F);
+    CHECK (std::abs (base_corners[2].x - expected_right) < 0.1F);
+    CHECK (std::abs (base_corners[2].y - expected_bottom) < 0.1F);
+
+    // Initial cursor / nullopt: corners equal base corners
+    renderer->update_input (std::nullopt, 0.016F);
+    CHECK_EQ (renderer->parallax_displacement ().x, 0.0F);
+    CHECK_EQ (renderer->parallax_displacement ().y, 0.0F);
+    CHECK_EQ (renderer->layer_corners (0)[0].x, base_corners[0].x);
+    CHECK_EQ (renderer->layer_corners (0)[0].y, base_corners[0].y);
+
+    // Mouse movement to the right:
+    // cursor.x = 1.0 -> cx = 0.5 -> target = 0.5 * 0.5 = 0.25
+    // offset_x = (0.0 + 0.01) * 0.25 * 3840 = +9.6
+    renderer->update_input (core::Vec2 { 1.0F, 0.5F }, 0.016F);
+    CHECK (std::abs (renderer->parallax_displacement ().x - 0.25F) < 1.0e-4F);
+    CHECK (std::abs (renderer->parallax_displacement ().y - 0.0F) < 1.0e-4F);
+
+    const auto displaced_corners = renderer->layer_corners (0);
+    CHECK (std::abs (displaced_corners[0].x - (base_corners[0].x + 9.6F)) < 0.1F);
+    CHECK (std::abs (displaced_corners[0].y - base_corners[0].y) < 0.1F);
+
+    // Character center is framed at ~67.8% of scene width, remaining within canonical bounds
+    const float char_center_ratio = (2603.11499F + 9.6F) / 3840.0F;
+    CHECK (char_center_ratio > 0.60F && char_center_ratio < 0.75F);
+}
+
+TEST (scene_image_layer_with_effect_modifies_pixel) {
+    we::test::TempDir temp;
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+            "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+            "general": {"orthogonalprojection": {"width": 100, "height": 100}, "clearcolor": [0,0,0]},
+            "objects": [{
+                "id": 1,
+                "name": "layer_with_effect",
+                "image": "models/layer.json",
+                "origin": [50,50,0],
+                "scale": [1,1,1],
+                "alpha": 1,
+                "color": [1,1,1],
+                "size": [100,100],
+                "visible": true,
+                "effects": [{
+                    "file": "effects/invert/effect.json",
+                    "visible": true
+                }]
+            }]
+        })"
+    );
+    we::test::write_text (temp / "models/layer.json", R"({"material":"materials/layer.json"})");
+    we::test::write_text (
+	temp / "materials/layer.json",
+	R"({"passes":[{"shader":"genericimage","textures":["textures/red.tex"],"blending":"normal"}]})"
+    );
+
+    const std::array<std::uint8_t, 4> red = { 255, 0, 0, 255 };
+    we::test::write_bytes (temp / "textures/red.tex", make_argb_texture (1, 1, red));
+
+    we::test::write_text (
+	temp / "effects/invert/effect.json", R"({"passes":[{"material":"materials/effects/invert.json"}]})"
+    );
+    we::test::write_text (
+	temp / "materials/effects/invert.json", R"({"passes":[{"shader":"effects/invert","blending":"normal"}]})"
+    );
+    we::test::write_text (
+	temp / "shaders/effects/invert.vert",
+	"attribute vec3 a_Position;\nattribute vec2 a_TexCoord;\nvarying vec2 v_TexCoord;\nvoid main() { gl_Position = "
+	"vec4(a_Position, 1.0); v_TexCoord = a_TexCoord; }\n"
+    );
+    we::test::write_text (
+	temp / "shaders/effects/invert.frag",
+	"varying vec2 v_TexCoord;\nvoid main() { vec4 src = texSample2D(g_Texture0, v_TexCoord); gl_FragColor = "
+	"vec4(1.0 - src.r, 1.0 - src.g, 1.0 - src.b, 1.0); }\n"
+    );
+
+    const auto pixel = render_scene_pixel (temp.path (), 100, 50, 50);
+    // Red (255, 0, 0) inverted should be Cyan (0, 255, 255)
+    CHECK (pixel[0] < 50);
+    CHECK (pixel[1] > 200);
+    CHECK (pixel[2] > 200);
 }

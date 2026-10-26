@@ -201,6 +201,26 @@
       background: var(--accent-cyan);
       box-shadow: 0 0 8px var(--accent-cyan);
       display: inline-block;
+      transition: background var(--transition-fast), box-shadow var(--transition-fast);
+      animation: live-pulse 2s infinite ease-in-out;
+    }
+
+    .live-dot.paused,
+    .live-dot.off {
+      background: var(--text-muted);
+      box-shadow: none;
+      animation: none;
+    }
+
+    @keyframes live-pulse {
+      0%, 100% {
+        box-shadow: 0 0 6px var(--accent-cyan);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 12px var(--accent-cyan), 0 0 4px var(--accent-cyan);
+        transform: scale(1.15);
+      }
     }
 
     .amber-dot {
@@ -209,6 +229,125 @@
       border-radius: 50%;
       background: var(--accent-amber);
       display: inline-block;
+    }
+
+    /* Ambient Background Canvas */
+    .ambient-bg-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.35;
+      transition: opacity 0.5s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .ambient-bg-canvas.off {
+      opacity: 0;
+    }
+
+    /* Animated Background Interactive Switch */
+    .bg-toggle-group {
+      display: flex;
+      align-items: center;
+    }
+
+    .bg-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px 4px 6px;
+      background: var(--bg-canvas);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-pill, 20px);
+      cursor: pointer;
+      font-family: var(--font-ui);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--text-primary);
+      transition: all var(--transition-fast);
+      user-select: none;
+      outline: none;
+    }
+
+    .bg-toggle-btn:hover {
+      border-color: var(--border-hover);
+      background: var(--bg-surface-elevated);
+    }
+
+    .bg-toggle-btn:focus-visible {
+      outline: 2px solid var(--border-focus);
+      outline-offset: 1px;
+    }
+
+    .bg-toggle-btn.active {
+      border-color: var(--border-active);
+      box-shadow: 0 0 10px var(--accent-cyan-tint);
+    }
+
+    .bg-toggle-btn.inactive {
+      color: var(--text-muted);
+      border-color: var(--border-subtle);
+      opacity: 0.85;
+    }
+
+    .bg-toggle-track {
+      position: relative;
+      width: 30px;
+      height: 18px;
+      border-radius: 10px;
+      background: var(--border-subtle);
+      transition: background var(--transition-fast);
+      display: inline-flex;
+      align-items: center;
+      padding: 2px;
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+
+    .bg-toggle-btn.active .bg-toggle-track {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 8px var(--accent-cyan-glow);
+    }
+
+    .bg-toggle-btn.inactive .bg-toggle-track {
+      background: var(--border-hover);
+    }
+
+    .bg-toggle-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+      transition: transform var(--transition-fast);
+      transform: translateX(12px);
+    }
+
+    .bg-toggle-btn.inactive .bg-toggle-thumb {
+      transform: translateX(0);
+      background: var(--text-muted);
+    }
+
+    .bg-toggle-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-cyan);
+      transition: color var(--transition-fast);
+      flex-shrink: 0;
+    }
+
+    .bg-toggle-btn.inactive .bg-toggle-icon {
+      color: var(--text-muted);
+    }
+
+    .bg-toggle-label {
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
     }
 
     /* Main Viewport */
@@ -1064,6 +1203,7 @@
   </style>
 </head>
 <body>
+  <canvas id="ambient-bg-canvas" class="ambient-bg-canvas" aria-hidden="true"></canvas>
   <div class="app-shell">
     <!-- Header -->
     <header class="app-header">
@@ -1089,19 +1229,51 @@
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
             <line x1="2" y1="12" x2="22" y2="12"></line>
           </svg>
-          <span>Auto / Sistema</span>
+          <span>Auto</span>
         </button>
         <button type="button" class="toolkit-btn" data-toolkit="gtk" title="GNOME Libadwaita (#1e1e1e/#242424, azul #3584e4, 12px pill radius)">
           <span class="dot-swatch" style="background:#3584e4;"></span>
-          <span>GTK / Libadwaita</span>
+          <span>GTK</span>
         </button>
         <button type="button" class="toolkit-btn" data-toolkit="qt" title="KDE Plasma Breeze (#232629/#31363b, cyan #3daee9, 6px clean radius)">
           <span class="dot-swatch" style="background:#3daee9;"></span>
-          <span>Qt / Breeze</span>
+          <span>Qt</span>
         </button>
         <button type="button" class="toolkit-btn" data-toolkit="brave" title="Brave & Obsidian (#0d1117/#161c24, Brave Lion Orange #fb542b, 8px radius)">
           <span class="dot-swatch" style="background:#fb542b;"></span>
-          <span>Brave / Obsidian</span>
+          <span>Brave</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="nord" title="Nord (#2e3440/#3b4252, polar frost #88c0d0)">
+          <span class="dot-swatch" style="background:#88c0d0;"></span>
+          <span>Nord</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="catppuccin" title="Catppuccin Mocha (#1e1e2e/#181825, mauve #cba6f7)">
+          <span class="dot-swatch" style="background:#cba6f7;"></span>
+          <span>Catppuccin</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="cyberpunk" title="Cyberpunk Neon (#0b0d19/#121528, neon cyan #00f0ff)">
+          <span class="dot-swatch" style="background:#00f0ff;"></span>
+          <span>Cyberpunk</span>
+        </button>
+        <button type="button" class="toolkit-btn" data-toolkit="dark" title="Dark Default (#090d12/#121820, emerald #00d4be)">
+          <span class="dot-swatch" style="background:#00d4be;"></span>
+          <span>Dark</span>
+        </button>
+      </div>
+
+      <!-- Animated Background Interactive Switch -->
+      <div class="bg-toggle-group">
+        <button type="button" class="bg-toggle-btn active" id="btn-toggle-bg" role="switch" aria-checked="true" title="Alternar fondo animado (Fondo Activo / Fondo Apagado)">
+          <span class="bg-toggle-track" aria-hidden="true">
+            <span class="bg-toggle-thumb"></span>
+          </span>
+          <span class="bg-toggle-icon" aria-hidden="true">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+              <line x1="12" y1="2" x2="12" y2="12"></line>
+            </svg>
+          </span>
+          <span class="bg-toggle-label" id="bg-toggle-label">Fondo Activo</span>
         </button>
       </div>
 
@@ -1883,8 +2055,189 @@
         "--radius-card": "8px",
         "--radius-btn": "6px",
         "--radius-pill": "16px"
+      },
+      nord: {
+        // Nord Polar Night & Frost #2e3440 / #3b4252, Frost cyan #88c0d0, 8px radius
+        "--bg-canvas": "#2e3440",
+        "--bg-surface": "#3b4252",
+        "--bg-surface-elevated": "#434c5e",
+        "--border-subtle": "#4c566a",
+        "--border-hover": "#d8dee9",
+        "--border-active": "#88c0d0",
+        "--border-focus": "#88c0d0",
+        "--text-primary": "#eceff4",
+        "--text-muted": "#d8dee9",
+        "--accent": "#88c0d0",
+        "--accent-cyan": "#88c0d0",
+        "--accent-cyan-tint": "rgba(136, 192, 208, 0.15)",
+        "--accent-cyan-glow": "rgba(136, 192, 208, 0.35)",
+        "--radius-card": "8px",
+        "--radius-btn": "6px",
+        "--radius-pill": "20px"
+      },
+      catppuccin: {
+        // Catppuccin Mocha #1e1e2e / #181825, Mauve #cba6f7 / Sky #89dceb, 10px radius
+        "--bg-canvas": "#1e1e2e",
+        "--bg-surface": "#181825",
+        "--bg-surface-elevated": "#313244",
+        "--border-subtle": "#45475a",
+        "--border-hover": "#585b70",
+        "--border-active": "#cba6f7",
+        "--border-focus": "#cba6f7",
+        "--text-primary": "#cdd6f4",
+        "--text-muted": "#a6adc8",
+        "--accent": "#cba6f7",
+        "--accent-cyan": "#89dceb",
+        "--accent-cyan-tint": "rgba(203, 166, 247, 0.15)",
+        "--accent-cyan-glow": "rgba(203, 166, 247, 0.35)",
+        "--radius-card": "10px",
+        "--radius-btn": "8px",
+        "--radius-pill": "20px"
+      },
+      cyberpunk: {
+        // Cyberpunk Neon #0b0d19 / #121528, Neon Cyan #00f0ff, Hot Pink #ff007f, 4px tech radius
+        "--bg-canvas": "#0b0d19",
+        "--bg-surface": "#121528",
+        "--bg-surface-elevated": "#1a1e36",
+        "--border-subtle": "#2d1b4e",
+        "--border-hover": "#ff007f",
+        "--border-active": "#00f0ff",
+        "--border-focus": "#00f0ff",
+        "--text-primary": "#fcee0a",
+        "--text-muted": "#8090b0",
+        "--accent": "#ff007f",
+        "--accent-cyan": "#00f0ff",
+        "--accent-cyan-tint": "rgba(0, 240, 255, 0.15)",
+        "--accent-cyan-glow": "rgba(0, 240, 255, 0.4)",
+        "--radius-card": "4px",
+        "--radius-btn": "4px",
+        "--radius-pill": "6px"
+      },
+      dark: {
+        // Deep Dark Default #090d12 / #121820, Emerald Cyan #00d4be
+        "--bg-canvas": "#090d12",
+        "--bg-surface": "#121820",
+        "--bg-surface-elevated": "#1a222e",
+        "--border-subtle": "#222c3a",
+        "--border-hover": "#2f3d50",
+        "--border-active": "#00d4be",
+        "--border-focus": "#00d4be",
+        "--text-primary": "#f0f4f8",
+        "--text-muted": "#7c8e9f",
+        "--accent": "#00d4be",
+        "--accent-cyan": "#00d4be",
+        "--accent-cyan-tint": "rgba(0, 212, 190, 0.12)",
+        "--accent-cyan-glow": "rgba(0, 212, 190, 0.28)",
+        "--radius-card": "8px",
+        "--radius-btn": "6px",
+        "--radius-pill": "20px"
       }
     };
+
+    // Ambient Dynamic Particle Background for the Web Gallery
+    class AmbientBackground {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas ? canvas.getContext("2d") : null;
+        this.particles = [];
+        this.animId = null;
+        this.isRunning = false;
+        if (!this.canvas || !this.ctx) return;
+        this.resize();
+        window.addEventListener("resize", () => this.resize());
+        this.initParticles();
+      }
+
+      resize() {
+        if (!this.canvas) return;
+        this.width = this.canvas.width = window.innerWidth;
+        this.height = this.canvas.height = window.innerHeight;
+      }
+
+      initParticles() {
+        const count = Math.min(38, Math.floor(window.innerWidth / 45));
+        this.particles = [];
+        for (let i = 0; i < count; i++) {
+          this.particles.push({
+            x: Math.random() * (this.width || 800),
+            y: Math.random() * (this.height || 600),
+            vx: (Math.random() - 0.5) * 0.35,
+            vy: (Math.random() - 0.5) * 0.35,
+            size: Math.random() * 2 + 1,
+            alpha: Math.random() * 0.35 + 0.15
+          });
+        }
+      }
+
+      start() {
+        if (this.isRunning || !this.canvas) return;
+        this.isRunning = true;
+        this.canvas.classList.remove("off");
+        const loop = () => {
+          if (!this.isRunning) return;
+          this.render();
+          this.animId = requestAnimationFrame(loop);
+        };
+        this.animId = requestAnimationFrame(loop);
+      }
+
+      stop() {
+        this.isRunning = false;
+        if (this.animId) {
+          cancelAnimationFrame(this.animId);
+          this.animId = null;
+        }
+        if (this.canvas) {
+          this.canvas.classList.add("off");
+        }
+        if (this.ctx) {
+          this.ctx.clearRect(0, 0, this.width, this.height);
+        }
+      }
+
+      render() {
+        const ctx = this.ctx;
+        if (!ctx) return;
+        ctx.clearRect(0, 0, this.width, this.height);
+
+        const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent-cyan").trim() || "#00d4be";
+
+        ctx.fillStyle = accent;
+        ctx.strokeStyle = accent;
+
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          p.x += p.vx;
+          p.y += p.vy;
+
+          if (p.x < 0) p.x = this.width;
+          if (p.x > this.width) p.x = 0;
+          if (p.y < 0) p.y = this.height;
+          if (p.y > this.height) p.y = 0;
+
+          ctx.beginPath();
+          ctx.globalAlpha = p.alpha;
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+
+          for (let j = i + 1; j < this.particles.length; j++) {
+            const p2 = this.particles[j];
+            const dx = p.x - p2.x;
+            const dy = p.y - p2.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 110) {
+              ctx.beginPath();
+              ctx.globalAlpha = (1 - dist / 110) * 0.12;
+              ctx.lineWidth = 0.8;
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(p2.x, p2.y);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.globalAlpha = 1.0;
+      }
+    }
 
     // Application State Management
     class GalleryApp {
@@ -1892,6 +2245,8 @@
         this.wallpapers = [...INITIAL_WALLPAPERS];
         this.favorites = new Set(["3615154110", "3104928173"]);
         this.activeId = "3615154110";
+        this.lastActiveId = "3615154110";
+        this.isBackgroundActive = true;
         this.selectedId = "3615154110";
         this.currentFilter = "all";
         this.searchQuery = "";
@@ -1910,6 +2265,12 @@
           audio: false,
           pauseFullscreen: true
         };
+
+        const canvasEl = document.getElementById("ambient-bg-canvas");
+        this.ambientCanvas = canvasEl ? new AmbientBackground(canvasEl) : null;
+        if (this.ambientCanvas) {
+          this.ambientCanvas.start();
+        }
 
         this.initDOMElements();
         this.bindEvents();
@@ -1933,6 +2294,9 @@
           headerBackend: document.getElementById("header-backend"),
           headerOutput: document.getElementById("header-output"),
           headerBattery: document.getElementById("header-battery"),
+          headerPulse: document.getElementById("header-pulse"),
+          btnToggleBg: document.getElementById("btn-toggle-bg"),
+          bgToggleLabel: document.getElementById("bg-toggle-label"),
           inspectTitle: document.getElementById("inspect-title"),
           inspectorHero: document.getElementById("inspector-hero"),
           specId: document.getElementById("spec-id"),
@@ -1967,6 +2331,13 @@
       }
 
       bindEvents() {
+        // Background active/inactive toggle
+        if (this.dom.btnToggleBg) {
+          this.dom.btnToggleBg.addEventListener("click", () => {
+            this.toggleBackground();
+          });
+        }
+
         // Toolkit compatibility switcher
         this.dom.toolkitBtns.forEach((btn) => {
           btn.addEventListener("click", () => {
@@ -2095,6 +2466,22 @@
           const current = this.getSelectedWallpaper();
           if (current) {
             this.activeId = current.id;
+            this.lastActiveId = current.id;
+            this.isBackgroundActive = true;
+            if (this.dom.btnToggleBg) {
+              this.dom.btnToggleBg.classList.add("active");
+              this.dom.btnToggleBg.classList.remove("inactive");
+              this.dom.btnToggleBg.setAttribute("aria-checked", "true");
+            }
+            if (this.dom.bgToggleLabel) {
+              this.dom.bgToggleLabel.textContent = "Fondo Activo";
+            }
+            if (this.dom.headerPulse) {
+              this.dom.headerPulse.classList.remove("paused", "off");
+            }
+            if (this.ambientCanvas) {
+              this.ambientCanvas.start();
+            }
             this.dom.headerActiveName.textContent = current.title;
             this.renderCatalog();
             const cmd = this.dom.cliCommand.textContent;
@@ -2135,6 +2522,9 @@
             e.preventDefault();
             this.dom.searchInput.focus();
             this.dom.searchInput.select();
+          } else if ((e.key === "b" || e.key === "B") && document.activeElement !== this.dom.searchInput) {
+            e.preventDefault();
+            this.toggleBackground();
           } else if (e.key === "Escape") {
             if (document.activeElement === this.dom.searchInput) {
               this.dom.searchInput.blur();
@@ -2191,6 +2581,22 @@
         if (mapped.length > 0) {
           this.selectedId = mapped[0].id;
           this.activeId = mapped[0].id;
+          this.lastActiveId = mapped[0].id;
+          this.isBackgroundActive = true;
+          if (this.dom.btnToggleBg) {
+            this.dom.btnToggleBg.classList.add("active");
+            this.dom.btnToggleBg.classList.remove("inactive");
+            this.dom.btnToggleBg.setAttribute("aria-checked", "true");
+          }
+          if (this.dom.bgToggleLabel) {
+            this.dom.bgToggleLabel.textContent = "Fondo Activo";
+          }
+          if (this.dom.headerPulse) {
+            this.dom.headerPulse.classList.remove("paused", "off");
+          }
+          if (this.ambientCanvas) {
+            this.ambientCanvas.start();
+          }
           this.dom.headerActiveName.textContent = mapped[0].title;
         }
         this.renderCatalog();
@@ -2367,9 +2773,98 @@
             auto: "Auto / Sistema",
             gtk: "GTK / Libadwaita",
             qt: "Qt / Breeze",
-            brave: "Brave / Obsidian"
+            brave: "Brave / Obsidian",
+            nord: "Nord Frost",
+            catppuccin: "Catppuccin Mocha",
+            cyberpunk: "Cyberpunk Neon",
+            dark: "Dark Default"
           };
           this.showToast(`Toolkit: ${names[themeKey] || themeKey}`);
+        }
+      }
+
+      toggleBackground(forceState = null) {
+        const nextState = forceState !== null ? forceState : !this.isBackgroundActive;
+        this.isBackgroundActive = nextState;
+
+        if (this.isBackgroundActive) {
+          // Re-activate wallpaper
+          if (!this.activeId) {
+            this.activeId = this.selectedId || this.lastActiveId || (this.wallpapers[0] ? this.wallpapers[0].id : "3615154110");
+          }
+          const current = this.getSelectedWallpaper() || this.wallpapers.find(w => w.id === this.activeId);
+          const title = current ? current.title : "Fondo Animado";
+
+          if (this.dom.btnToggleBg) {
+            this.dom.btnToggleBg.classList.add("active");
+            this.dom.btnToggleBg.classList.remove("inactive");
+            this.dom.btnToggleBg.setAttribute("aria-checked", "true");
+          }
+          if (this.dom.bgToggleLabel) {
+            this.dom.bgToggleLabel.textContent = "Fondo Activo";
+          }
+          if (this.dom.headerPulse) {
+            this.dom.headerPulse.classList.remove("paused", "off");
+          }
+          this.dom.headerActiveName.textContent = title;
+
+          if (this.ambientCanvas) {
+            this.ambientCanvas.start();
+          }
+
+          this.renderCatalog();
+          this.updateCliCommand();
+
+          const cmd = this.dom.cliCommand.textContent;
+          navigator.clipboard.writeText(cmd).catch(() => {});
+
+          // Try local API invocation if a daemon/backend is active
+          fetch("/api/wallpaper/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: this.activeId, command: cmd })
+          }).catch(() => {});
+
+          this.showToast(`Fondo activado: ${title} (comando copiado)`);
+        } else {
+          // Deactivate wallpaper ("Fondo Apagado")
+          if (this.activeId) {
+            this.lastActiveId = this.activeId;
+          }
+          this.activeId = null;
+
+          if (this.dom.btnToggleBg) {
+            this.dom.btnToggleBg.classList.remove("active");
+            this.dom.btnToggleBg.classList.add("inactive");
+            this.dom.btnToggleBg.setAttribute("aria-checked", "false");
+          }
+          if (this.dom.bgToggleLabel) {
+            this.dom.bgToggleLabel.textContent = "Fondo Apagado";
+          }
+          if (this.dom.headerPulse) {
+            this.dom.headerPulse.classList.add("paused", "off");
+          }
+          this.dom.headerActiveName.textContent = "Fondo Apagado (Detenido)";
+
+          if (this.ambientCanvas) {
+            this.ambientCanvas.stop();
+          }
+
+          this.renderCatalog();
+
+          const isWeWallpaper = this.engineConfig.cliTool === "we-wallpaper";
+          const stopCmd = isWeWallpaper ? "we-wallpaper stop" : "pkill -x we || pkill -f linux-wallpaperengine";
+
+          navigator.clipboard.writeText(stopCmd).catch(() => {});
+
+          // Try local API invocation if a daemon/backend is active
+          fetch("/api/wallpaper/stop", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "stop" })
+          }).catch(() => {});
+
+          this.showToast(`Fondo apagado — Comando de parada copiado: ${stopCmd}`);
         }
       }
 

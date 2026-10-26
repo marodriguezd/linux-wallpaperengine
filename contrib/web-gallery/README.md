@@ -42,5 +42,6 @@ Then click **Load JSON** in the dashboard toolbar and select `workshop.json`.
 | Shortcut | Action |
 | :--- | :--- |
 | `/` | Focus search bar |
+| `b` | Toggle animated background ("Fondo Activo" / "Fondo Apagado") |
 | `Esc` | Close inspector panel or defocus search |
 | `Enter` / `Space` | Select / inspect focused wallpaper card |

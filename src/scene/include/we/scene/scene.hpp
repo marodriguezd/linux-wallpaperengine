@@ -22,6 +22,17 @@ struct SceneCamera {
     int width = 1920;
     int height = 1080;
     bool automatic_projection = false;
+    bool parallax_enabled = false;
+    float parallax_amount = 0.5F;
+    float parallax_delay = 0.9F;
+    float parallax_mouse_influence = 1.0F;
+};
+
+struct SceneSound {
+    std::string name;
+    std::vector<std::string> files;
+    std::string playback_mode = "loop";
+    float volume = 1.0F;
 };
 
 struct EffectPassBind {
@@ -150,6 +161,7 @@ struct Scene {
     std::vector<SceneImage> images;
     std::vector<SceneLight> lights;
     std::vector<SceneParticle> particles;
+    std::vector<SceneSound> sounds;
     int skipped_objects = 0;
 };
 

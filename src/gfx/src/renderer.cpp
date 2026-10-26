@@ -128,7 +128,7 @@ void main() {
     vec4 color = texture(uTexture, vTexCoord) * vColor;
 
     float metallic = uLayerMetallic;
-    float roughness = uLayerRoughness;
+    float roughness = max(uLayerRoughness, 0.04);
     vec4 component_maps = vec4(0.0);
 
     if (uHasPbrMask) {
@@ -615,6 +615,7 @@ void Renderer::flush () {
 	return;
     }
 
+    this->shader_.use ();
     apply_blend (this->current_blend_);
     this->current_texture_->bind (0);
 

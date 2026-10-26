@@ -60,11 +60,20 @@ namespace {
 	    return found->get<bool> ();
 	}
 
+	if (found->is_number ()) {
+	    return found->get<int> () != 0;
+	}
+
 	if (found->is_object ()) {
 	    const auto nested = found->find ("value");
 
-	    if (nested != found->end () && nested->is_boolean ()) {
-		return nested->get<bool> ();
+	    if (nested != found->end ()) {
+		if (nested->is_boolean ()) {
+		    return nested->get<bool> ();
+		}
+		if (nested->is_number ()) {
+		    return nested->get<int> () != 0;
+		}
 	    }
 	}
 
@@ -384,6 +393,57 @@ namespace {
 	return particle;
     }
 
+    std::optional<SceneSound> parse_sound (const json& object) {
+	const auto sound_it = object.find ("sound");
+
+	if (sound_it == object.end ()) {
+	    return std::nullopt;
+	}
+
+	const json* value = &*sound_it;
+
+	if (value->is_object ()) {
+	    const auto nested = value->find ("value");
+
+	    if (nested != value->end ()) {
+		value = &*nested;
+	    }
+	}
+
+	std::vector<std::string> files;
+
+	if (value->is_string ()) {
+	    const auto str = value->get<std::string> ();
+
+	    if (!str.empty ()) {
+		files.push_back (str);
+	    }
+	} else if (value->is_array ()) {
+	    for (const auto& item : *value) {
+		if (item.is_string ()) {
+		    files.push_back (item.get<std::string> ());
+		} else if (item.is_object ()) {
+		    const auto nested = item.find ("value");
+
+		    if (nested != item.end () && nested->is_string ()) {
+			files.push_back (nested->get<std::string> ());
+		    }
+		}
+	    }
+	}
+
+	if (files.empty ()) {
+	    return std::nullopt;
+	}
+
+	SceneSound sound;
+	sound.name = text (object, "name", "");
+	sound.playback_mode = lowercase (text (object, "playbackmode", "loop"));
+	sound.volume = number (object, "volume", 1.0F);
+	sound.files = std::move (files);
+	return sound;
+    }
+
     std::optional<SceneLight> parse_point_light (const json& object) {
 	const auto type = object.find ("light");
 
@@ -512,6 +572,40 @@ namespace {
 					    for (const auto& [ck, cv] : mp["combos"].items ()) {
 						if (cv.is_number ()) {
 						    pass.combos[ck] = cv.get<int> ();
+						}
+					    }
+					}
+
+					if (mp.contains ("constantshadervalues")
+					    && mp["constantshadervalues"].is_object ()) {
+					    for (const auto& [k, v] : mp["constantshadervalues"].items ()) {
+						if (v.is_string ()) {
+						    pass.constant_values[k] = v.get<std::string> ();
+						} else if (v.is_number ()) {
+						    pass.constant_values[k] = v.dump ();
+						} else if (v.is_object () && v.contains ("value")) {
+						    if (v["value"].is_string ()) {
+							pass.constant_values[k] = v["value"].get<std::string> ();
+						    } else {
+							pass.constant_values[k] = v["value"].dump ();
+						    }
+						}
+					    }
+					}
+				    }
+
+				    if (mat_json.contains ("constantshadervalues")
+					&& mat_json["constantshadervalues"].is_object ()) {
+					for (const auto& [k, v] : mat_json["constantshadervalues"].items ()) {
+					    if (v.is_string ()) {
+						pass.constant_values[k] = v.get<std::string> ();
+					    } else if (v.is_number ()) {
+						pass.constant_values[k] = v.dump ();
+					    } else if (v.is_object () && v.contains ("value")) {
+						if (v["value"].is_string ()) {
+						    pass.constant_values[k] = v["value"].get<std::string> ();
+						} else {
+						    pass.constant_values[k] = v["value"].dump ();
 						}
 					    }
 					}
@@ -704,11 +798,19 @@ std::expected<Scene, core::Error> load_scene (const AssetContainer& assets, cons
 
     if (general != root.end () && general->is_object ()) {
 	scene.clear_color = color (*general, "clearcolor", scene.clear_color);
-	scene.ambient = vec3 (*general, "ambientcolor", scene.ambient);
+	const auto ambient_col = vec3 (*general, "ambientcolor", scene.ambient);
+	const auto skylight_col = vec3 (*general, "skylightcolor", { 0.0F, 0.0F, 0.0F });
+	scene.ambient = { std::max (ambient_col.x, skylight_col.x), std::max (ambient_col.y, skylight_col.y),
+			  std::max (ambient_col.z, skylight_col.z) };
 	scene.bloom.enabled = boolean (*general, "bloom", false);
 	scene.bloom.strength = number (*general, "bloomstrength", 1.0F);
 	scene.bloom.threshold = number (*general, "bloomthreshold", 0.65F);
 	scene.bloom.tint = vec3 (*general, "bloomtint", { 1.0F, 1.0F, 1.0F });
+	scene.camera.parallax_enabled = boolean (*general, "cameraparallax", scene.camera.parallax_enabled);
+	scene.camera.parallax_amount = number (*general, "cameraparallaxamount", scene.camera.parallax_amount);
+	scene.camera.parallax_delay = number (*general, "cameraparallaxdelay", scene.camera.parallax_delay);
+	scene.camera.parallax_mouse_influence
+	    = number (*general, "cameraparallaxmouseinfluence", scene.camera.parallax_mouse_influence);
 
 	const auto projection = general->find ("orthogonalprojection");
 
@@ -751,6 +853,12 @@ std::expected<Scene, core::Error> load_scene (const AssetContainer& assets, cons
 	    if (auto particle = parse_particle (object); particle.has_value ()) {
 		particle->order_index = object_order;
 		scene.particles.push_back (std::move (*particle));
+	    } else {
+		++scene.skipped_objects;
+	    }
+	} else if (object.contains ("sound")) {
+	    if (auto sound = parse_sound (object); sound.has_value ()) {
+		scene.sounds.push_back (std::move (*sound));
 	    } else {
 		++scene.skipped_objects;
 	    }

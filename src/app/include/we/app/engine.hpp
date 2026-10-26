@@ -31,6 +31,8 @@ struct EngineOptions {
     bool audio = false;
     float volume = 0.6F;
     bool verbose = false;
+    bool disable_mouse = false;
+    bool disable_parallax = false;
 
     // 0 means run until interrupted.
     std::uint64_t max_frames = 0;

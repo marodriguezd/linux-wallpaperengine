@@ -11,6 +11,7 @@ Scope {
     id: root
 
     property bool visible: false
+    property bool isRunning: false
     property string mode: "local"
     property string query: ""
     property string typeFilter: ""
@@ -31,8 +32,21 @@ Scope {
     property string exploreQuality: "hd"
     property int explorePage: 1
     property string selectedId: ""
+    property var selectedWallpaper: null
     property var props: []
     property var pendingEdits: ({})
+    // Multimonitor and Screens
+    property var screens: []
+    property string selectedScreen: ""
+    property string multimonitorMode: "clone"
+    // Audio and Volume
+    property int audioVolume: 60
+    property bool audioEnabled: false
+    // Telemetry and UI
+    property string batteryStatus: "🔋 100% AC"
+    property string gpuInfo: "⚡ GPU Auto"
+    property bool controlDockOpen: true
+    property int controlDockTab: 0
     // Power panel: pending values (0/empty = auto/none), applied via applyPower()
     property string powerProfile: ""
     property int powerAcFps: 0
@@ -53,6 +67,14 @@ Scope {
     property string toolkitTheme: "auto"
     property string gpuTarget: "auto"
     property string libraryPath: (Quickshell.env("HOME") || "") + "/.config/dwm-titus/gallery-library.json"
+
+    onVisibleChanged: {
+        if (root.visible) {
+            checkActiveProcess.running = true;
+            root.loadScreens();
+            root.loadTelemetry();
+        }
+    }
 
     readonly property var categories: ["anime", "nature", "sci-fi", "cyberpunk", "gaming", "minimalist"]
 
@@ -193,8 +215,12 @@ Scope {
         root.exploreSelected = null;
         root.exploreError = "";
         root.exploreLoading = true;
-        root.status = "buscando online...";
-        const args = ["we-wallpaper", "catalog", root.exploreSource, root.exploreQuery];
+        root.status = "searching online...";
+        let query = root.exploreQuery;
+        if (root.exploreSource === "bing" && (query === "archive" || query.indexOf("archive") === 0)) {
+            query = "archive" + root.explorePage;
+        }
+        const args = ["we-wallpaper", "catalog", root.exploreSource, query];
         if (root.exploreSource === "motionbgs" || root.exploreSource === "wallhaven" || root.exploreSource === "desktophut" || root.exploreSource === "minimal") {
             args.push(String(root.explorePage));
         }
@@ -209,7 +235,6 @@ Scope {
 
     function searchExplore() : void {
         root.exploreQuery = root.exploreFilter;
-        root.exploreFilter = "";
         refreshExplore();
     }
 
@@ -325,17 +350,21 @@ Scope {
         }
 
         root.downloadingRef = item.ref;
-        root.status = "instalando " + (item.title || item.ref) + "...";
+        root.status = "installing " + (item.title || item.ref) + "...";
         const src = item.ref.split(":")[0];
-        const args = ["we-wallpaper", "catalog-get", item.ref];
-        if (src === "motionbgs") {
-            args.push(root.exploreQuality);
-        }
-        if (item.title) {
-            args.push(item.title);
-        }
-        downloadProcess.command = args;
+        downloadProcess.command = ["we-wallpaper", "catalog-get", item.ref, (src === "motionbgs" ? root.exploreQuality : ""), (item.title || "")];
         downloadProcess.running = true;
+    }
+
+    property var targetScreen: null
+
+    function openOnScreen(screen : var) : void {
+        if (root.visible && root.targetScreen === screen) {
+            root.close();
+            return;
+        }
+        root.targetScreen = screen;
+        root.visible = true;
     }
 
     function open() : void {
@@ -344,10 +373,15 @@ Scope {
 
     function close() : void {
         root.visible = false;
+        root.targetScreen = null;
     }
 
     function toggle() : void {
-        root.visible = !root.visible;
+        if (root.visible) {
+            root.close();
+        } else {
+            root.open();
+        }
     }
 
     function setTypeFilter(type : string) : void {
@@ -371,13 +405,17 @@ Scope {
         favProcess.running = true;
     }
 
+    function toggleFav(item : var) : void {
+        root.toggleFavorite(item);
+    }
+
     function apply(item : var) : void {
         if (!item || !item.id) {
             return;
         }
 
         if (item.missing === true) {
-            root.status = (item.title || item.id) + " ya no está instalado";
+            root.status = (item.title || item.id) + " is no longer installed";
             return;
         }
 
@@ -386,12 +424,28 @@ Scope {
         applyProcess.running = true;
     }
 
+    function toggleActive() : void {
+        controlProcess.command = ["we-wallpaper", "toggle"];
+        controlProcess.running = true;
+    }
+
+    function stopWallpaper() : void {
+        controlProcess.command = ["we-wallpaper", "stop"];
+        controlProcess.running = true;
+    }
+
+    function startWallpaper() : void {
+        controlProcess.command = ["we-wallpaper", "restore"];
+        controlProcess.running = true;
+    }
+
     function select(item : var) : void {
-        if (!item || !item.id || root.selectedId === item.id) {
+        if (!item || !item.id) {
             return;
         }
 
         root.selectedId = item.id;
+        root.selectedWallpaper = item;
         root.pendingEdits = ({});
 
         if ((item.type || "") === "image") {
@@ -403,6 +457,35 @@ Scope {
         loadPropsProcess.running = true;
     }
 
+    function loadProps(id : string) : void {
+        if (!id) return;
+        for (let i = 0; i < root.items.length; i++) {
+            if (root.items[i] && String(root.items[i].id) === String(id)) {
+                root.select(root.items[i]);
+                return;
+            }
+        }
+        root.select({ id: id });
+    }
+
+    function inspect(item : var) : void {
+        if (!item || !item.id) return;
+        root.select(item);
+        root.controlDockOpen = true;
+        root.controlDockTab = 2; // Tab 2: Scene & Audio
+    }
+
+    function inspectId(id : string) : void {
+        if (!id) return;
+        for (let i = 0; i < root.items.length; i++) {
+            if (root.items[i] && String(root.items[i].id) === String(id)) {
+                root.inspect(root.items[i]);
+                return;
+            }
+        }
+        root.inspect({ id: id });
+    }
+
     function selectedItem() : var {
         for (let i = 0; i < root.items.length; i++) {
             if (root.items[i] && root.items[i].id === root.selectedId) {
@@ -410,7 +493,75 @@ Scope {
             }
         }
 
-        return null;
+        return root.selectedWallpaper;
+    }
+
+    function applyPreset(p : string) : void {
+        if (p === "eco") {
+            root.powerProfile = "lite";
+            root.powerAcFps = 30;
+            root.powerBattFps = 0;
+            root.powerPauseOnBatt = true;
+            root.powerFullscreenPause = true;
+        } else if (p === "balanced") {
+            root.powerProfile = "balanced";
+            root.powerAcFps = 60;
+            root.powerBattFps = 15;
+            root.powerPauseOnBatt = false;
+            root.powerFullscreenPause = true;
+        } else if (p === "ultra") {
+            root.powerProfile = "full";
+            root.powerAcFps = 144;
+            root.powerBattFps = 30;
+            root.powerPauseOnBatt = false;
+            root.powerFullscreenPause = false;
+        }
+        applyPower();
+    }
+
+    function setVolume(v : int) : void {
+        root.audioVolume = v;
+        volumeProcess.command = ["we-wallpaper", "volume", String(v)];
+        volumeProcess.running = true;
+    }
+
+    function toggleMute() : void {
+        root.audioEnabled = !root.audioEnabled;
+        muteProcess.command = ["we-wallpaper", "mute", root.audioEnabled ? "off" : "on"];
+        muteProcess.running = true;
+    }
+
+    function applyToScreen(screenName : string, wpId : string, mode : string) : void {
+        if (!screenName || !wpId) return;
+        applyScreenProcess.command = ["we-wallpaper", "apply-screen", screenName, wpId, mode || "lite"];
+        applyScreenProcess.running = true;
+    }
+
+    function setMultimonitor(m : string) : void {
+        root.multimonitorMode = m;
+        multimonitorProcess.command = ["we-wallpaper", "multimonitor", m];
+        multimonitorProcess.running = true;
+    }
+
+    function saveProp(name : string, val : string) : void {
+        if (!root.selectedId || !name) return;
+        savePropsProcess.command = ["we-wallpaper", "props", root.selectedId, name + "=" + val];
+        savePropsProcess.running = true;
+    }
+
+    function resetProps() : void {
+        if (!root.selectedId) return;
+        resetPropsProcess.command = ["we-wallpaper", "props-clear", root.selectedId];
+        resetPropsProcess.running = true;
+    }
+
+    function loadScreens() : void {
+        screensProcess.command = ["we-wallpaper", "screens-json"];
+        screensProcess.running = true;
+    }
+
+    function loadTelemetry() : void {
+        telemetryProcess.running = true;
     }
 
     function editProp(name : string, value : string) : void {
@@ -470,7 +621,7 @@ Scope {
             return;
         }
 
-        root.status = "borrando " + (item.title || item.id) + "...";
+        root.status = "deleting " + (item.title || item.id) + "...";
         removeProcess.command = ["we-wallpaper", "remove", item.id];
         removeProcess.running = true;
     }
@@ -478,10 +629,13 @@ Scope {
     function refresh() : void {
         refreshProcess.running = true;
         currentProcess.running = true;
+        checkActiveProcess.running = true;
         powerProcess.command = ["we-wallpaper", "power"];
         powerProcess.running = true;
         backendProcess.command = ["we-wallpaper", "backend"];
         backendProcess.running = true;
+        root.loadScreens();
+        root.loadTelemetry();
     }
 
     function effBackend() : string {
@@ -578,7 +732,7 @@ Scope {
         case "gtk": return "GTK / Libadwaita";
         case "qt": return "Qt / Breeze";
         case "brave": return "Brave / Obsidian";
-        default: return "Auto / Sistema";
+        default: return "Auto / System";
         }
     }
 
@@ -593,8 +747,8 @@ Scope {
 
     function gpuTargetLabel() : string {
         switch (root.gpuTarget) {
-        case "intel": return "Intel iGPU (Batería)";
-        case "nvidia": return "dGPU Rendimiento";
+        case "intel": return "Intel iGPU (Battery)";
+        case "nvidia": return "dGPU Performance";
         default: return "Auto";
         }
     }
@@ -614,9 +768,12 @@ Scope {
             "WE_NO_FULLSCREEN_PAUSE=" + (root.powerFullscreenPause ? "0" : "1"),
             "WE_HWDEC=" + root.powerHwdec,
             "WE_TOOLKIT_THEME=" + root.toolkitTheme,
-            "WE_GPU=" + root.gpuTarget
+            "WE_GPU=" + root.gpuTarget,
+            "WE_AUDIO=" + (root.audioEnabled ? "1" : "0"),
+            "WE_VOLUME=" + String(root.audioVolume),
+            "WE_MULTIMONITOR=" + root.multimonitorMode
         ];
-        root.status = "guardando energía...";
+        root.status = "saving power profile...";
         powerSaveProcess.command = args;
         powerSaveProcess.running = true;
     }
@@ -641,6 +798,31 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: {
                 root.status = this.text;
+                root.isRunning = true;
+                currentProcess.running = true;
+                checkActiveProcess.running = true;
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: checkActiveProcess
+        command: ["we-wallpaper", "is-active"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.isRunning = (this.text.trim() === "active")
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: controlProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                checkActiveProcess.running = true;
                 currentProcess.running = true;
             }
         }
@@ -719,6 +901,13 @@ Scope {
                         root.toolkitTheme = (v === "gtk" || v === "qt" || v === "brave") ? v : "auto";
                     } else if (k === "WE_GPU") {
                         root.gpuTarget = (v === "intel" || v === "nvidia") ? v : "auto";
+                    } else if (k === "WE_AUDIO") {
+                        root.audioEnabled = (v === "1");
+                    } else if (k === "WE_VOLUME") {
+                        const n = parseInt(v, 10);
+                        root.audioVolume = isNaN(n) ? 60 : n;
+                    } else if (k === "WE_MULTIMONITOR") {
+                        root.multimonitorMode = (v === "independent" || v === "single") ? v : "clone";
                     }
                 }
 
@@ -775,7 +964,10 @@ Scope {
                         type: cols[1],
                         text: cols[2],
                         value: cols[3],
-                        saved: cols.length > 4 && cols[4] !== ""
+                        saved: cols.length > 4 && cols[4] !== "",
+                        min: cols.length > 5 && cols[5] !== "" ? parseFloat(cols[5]) : NaN,
+                        max: cols.length > 6 && cols[6] !== "" ? parseFloat(cols[6]) : NaN,
+                        step: cols.length > 7 && cols[7] !== "" ? parseFloat(cols[7]) : NaN
                     });
                 }
 
@@ -793,6 +985,115 @@ Scope {
             onStreamFinished: {
                 root.status = this.text;
                 root.reloadProps();
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: resetPropsProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                root.reloadProps();
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: screensProcess
+        command: ["we-wallpaper", "screens-json"]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const parsed = JSON.parse(this.text.trim());
+                    if (Array.isArray(parsed)) {
+                        root.screens = parsed;
+                        if (!root.selectedScreen || root.selectedScreen === "") {
+                            for (let i = 0; i < parsed.length; i++) {
+                                if (parsed[i].primary) {
+                                    root.selectedScreen = parsed[i].name;
+                                    break;
+                                }
+                            }
+                            if (!root.selectedScreen && parsed.length > 0) {
+                                root.selectedScreen = parsed[0].name;
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // Ignorado si no hay JSON
+                }
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: multimonitorProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                root.loadScreens();
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: applyScreenProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.status = this.text;
+                root.isRunning = true;
+                root.loadScreens();
+            }
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: volumeProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.status = this.text.split("\n")[0]
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: muteProcess
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: root.status = this.text.split("\n")[0]
+        }
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: telemetryProcess
+        command: ["bash", "-c", "echo \"BAT:$(cat /sys/class/power_supply/BAT*/capacity 2>/dev/null || echo 100)% $(cat /sys/class/power_supply/BAT*/status 2>/dev/null || echo AC) | GPU:$(nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits 2>/dev/null || echo auto)\""]
+        running: false
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const raw = this.text.trim();
+                const parts = raw.split(" | ");
+                if (parts.length >= 1 && parts[0].indexOf("BAT:") === 0) {
+                    root.batteryStatus = "🔋 " + parts[0].slice(4).trim();
+                }
+                if (parts.length >= 2 && parts[1].indexOf("GPU:") === 0) {
+                    const gpuParts = parts[1].slice(4).split(",");
+                    if (gpuParts.length >= 2) {
+                        root.gpuInfo = "⚡ GPU " + gpuParts[0].trim() + "% · " + gpuParts[1].trim() + "°C";
+                    } else {
+                        root.gpuInfo = "⚡ GPU " + parts[1].slice(4).trim();
+                    }
+                }
             }
         }
         stderr: StdioCollector {}
@@ -852,8 +1153,8 @@ Scope {
                     if (root.explorePage <= 1) {
                         root.exploreItems = [];
                     }
-                    root.exploreError = "Sin resultados o red fallida. Reintenta.";
-                    root.status = "explore: sin resultados";
+                    root.exploreError = "No results found or network error. Please retry.";
+                    root.status = "explore: no results";
                     return;
                 }
 
@@ -882,5 +1183,8 @@ Scope {
         stderr: StdioCollector {}
     }
 
-    Component.onCompleted: root.refresh()
+    Component.onCompleted: {
+        checkActiveProcess.running = true;
+        root.refresh();
+    }
 }

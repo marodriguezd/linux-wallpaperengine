@@ -30,19 +30,21 @@ void exercise_surface (display::Driver& driver, gfx::Context& context, std::size
     CHECK (renderer.has_value ());
 
     renderer->begin (extent.width, extent.height, core::Color { 0.05F, 0.10F, 0.2F, 1.0F });
-    renderer->draw_rect (core::Rect { 0.0F, 0.0F, static_cast<float> (extent.width),
-                                      static_cast<float> (extent.height) / 2.0F },
-                         core::Color { 1.0F, 0.0F, 1.0F, 1.0F });
+    renderer->draw_rect (
+	core::Rect { 0.0F, 0.0F, static_cast<float> (extent.width), static_cast<float> (extent.height) / 2.0F },
+	core::Color { 1.0F, 0.0F, 1.0F, 1.0F }
+    );
     renderer->end ();
 
-    std::vector<std::uint8_t> pixels (static_cast<std::size_t> (extent.width)
-                                      * static_cast<std::size_t> (extent.height) * 4U);
+    std::vector<std::uint8_t> pixels (
+	static_cast<std::size_t> (extent.width) * static_cast<std::size_t> (extent.height) * 4U
+    );
     (*surface)->readback (pixels);
     (*surface)->swap ();
 
     const auto index_center = (static_cast<std::size_t> (extent.height / 4) * static_cast<std::size_t> (extent.width)
-                               + static_cast<std::size_t> (extent.width / 2))
-            * 4U;
+			       + static_cast<std::size_t> (extent.width / 2))
+	* 4U;
     CHECK_EQ (pixels[index_center + 0], std::uint8_t { 255 });
     CHECK_EQ (pixels[index_center + 1], std::uint8_t { 0 });
     CHECK_EQ (pixels[index_center + 2], std::uint8_t { 255 });
@@ -69,6 +71,7 @@ TEST (display_headless_driver_presents_offscreen) {
     exercise_surface (**driver, **context, 0);
     CHECK (!(*driver)->should_close ());
     CHECK (!(*driver)->fullscreen_window (0).has_value ());
+    CHECK (!(*driver)->cursor_position ().has_value ());
 }
 
 TEST (display_backend_names_round_trip) {
@@ -85,7 +88,7 @@ TEST (display_backend_names_round_trip) {
 
 TEST (display_x11_desktop_driver_creates_desktop_windows) {
     if (!x11_tests_enabled ()) {
-        return;
+	return;
     }
 
     display::DriverOptions options;
@@ -106,7 +109,7 @@ TEST (display_x11_desktop_driver_creates_desktop_windows) {
 
 TEST (display_x11_root_driver_presents_through_root_window) {
     if (!x11_tests_enabled ()) {
-        return;
+	return;
     }
 
     display::DriverOptions options;

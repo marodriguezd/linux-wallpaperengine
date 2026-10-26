@@ -16,22 +16,22 @@ ASSETS_DIR="${WE_ASSETS_DIR:-$HOME/.local/share/Steam/steamapps/common/wallpaper
 if [ -n "${WE_ENGINE:-}" ]; then
     ENGINE="$WE_ENGINE"
 elif command -v we >/dev/null 2>&1; then
-    ENGINE="we"
+    ENGINE="$(command -v we)"
 elif [ -x /opt/fork/linux-wallpaperengine ]; then
     ENGINE=/opt/fork/linux-wallpaperengine
 else
-    ENGINE=linux-wallpaperengine
+    ENGINE="$(command -v linux-wallpaperengine 2>/dev/null || echo linux-wallpaperengine)"
 fi
 
 kill_engine() {
-    if pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 || pidof linux-wallpaper >/dev/null 2>&1; then
-	pkill -f 'linux-wallpaperengin[e]' 2>/dev/null || killall linux-wallpaper 2>/dev/null || true
-	local t=0
-	while pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 && [ $t -lt 15 ]; do
-	    sleep 0.1
-	    t=$((t + 1))
-	done
-    fi
+    pkill -x we 2>/dev/null || true
+    pkill -f 'linux-wallpaperengin[e]' 2>/dev/null || true
+    pkill -x linux-wallpaper 2>/dev/null || true
+    local t=0
+    while (pgrep -x we >/dev/null 2>&1 || pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1) && [ $t -lt 15 ]; do
+	sleep 0.1
+	t=$((t + 1))
+    done
 }
 # Cursor: se hereda del entorno salvo override (antes Banana:30 fijo).
 # En dwm-titus el vivo es cat_cursors:32 vía theme-env.sh, así que heredar
@@ -89,13 +89,15 @@ power_defaults() {
     echo "WE_MULTIMONITOR=${WE_MULTIMONITOR:-clone}"
     echo "WE_TOOLKIT_THEME=${WE_TOOLKIT_THEME:-auto}"
     echo "WE_GPU=${WE_GPU:-auto}"
+    echo "WE_AUDIO=${WE_AUDIO:-0}"
+    echo "WE_VOLUME=${WE_VOLUME:-60}"
 }
 load_power_conf() {
     [ -f "$POWER_CONF" ] || return 0
     local k v
     while IFS='=' read -r k v; do
 	case "$k" in
-	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC|WE_MULTIMONITOR|WE_TOOLKIT_THEME|WE_GPU)
+	    WE_PROFILE|WE_FPS|WE_FPS_BATTERY|WE_PAUSE_ON_BATTERY|WE_IDLE_PAUSE|WE_BACKEND|WE_LAYER|WE_PAUSE_ACTIVE_ONLY|WE_PAUSE_IGNORE_APPID|WE_NO_FULLSCREEN_PAUSE|WE_HWDEC|WE_MULTIMONITOR|WE_TOOLKIT_THEME|WE_GPU|WE_AUDIO|WE_VOLUME)
 		# solo si el entorno no la trae puesta
 		eval "[ -n \"\${$k:-}\" ] || $k=\"\$v\""
 		;;
@@ -106,6 +108,7 @@ load_power_conf
 # Fase 2: catálogo (misma ruta que Library::cachePath del engine)
 CACHE_FILE="${XDG_CACHE_HOME:-$HOME/.cache}/linux-wallpaperengine/library.json"
 THUMBS_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/linux-wallpaperengine/thumbs"
+TITLES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/titles.json"
 
 detect_backend() {
     if [ -n "${WE_BACKEND:-}" ]; then
@@ -234,6 +237,13 @@ fork_flags() {
     if [[ "${WE_IDLE_PAUSE:-0}" =~ ^[0-9]+$ ]] && [ "$WE_IDLE_PAUSE" -ge 1 ] && [ "$WE_IDLE_PAUSE" -le 1440 ]; then
 	printf '%s\n' "--idle-pause" "$WE_IDLE_PAUSE"
     fi
+    # Audio y volumen
+    if [ "${WE_AUDIO:-0}" = "1" ]; then
+	printf '%s\n' "--audio"
+    fi
+    if [ -n "${WE_VOLUME:-}" ]; then
+	printf '%s\n' "--volume" "$WE_VOLUME"
+    fi
     # Wayland-only (en X11 el engine las ignoraría): solo se emiten con
     # backend sway para no ensuciar la cmdline de X11
     if [ "$(detect_backend)" = "sway" ]; then
@@ -333,15 +343,17 @@ apply_wallpaper() {
 	[ -n "$arg" ] && gpu_args+=("$arg")
     done < <(gpu_env)
 
+    local target_path="$wallpaper_id"
+    [ -d "$WE_DIR/$wallpaper_id" ] && target_path="$WE_DIR/$wallpaper_id"
+
     # Lanzamiento desacoplado (setsid+disown, como dwm-wallpaper-animated):
     # sobrevive al cierre del terminal y a limpiezas de grupo de procesos.
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
-	--screen-root "$screen" \
-	--bg "$wallpaper_id" \
+    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup "$ENGINE" run \
+	"$target_path" \
+	--output "$screen" \
 	"${fork_args[@]}" \
-	"${flags[@]}" \
-	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	"${flags[@]}" > /tmp/we.log 2>&1 &
     disown $! 2>/dev/null || true
 
     echo "Wallpaper $wallpaper_id en $screen @ $(effective_fps)fps AC / ${WE_FPS_BATTERY:-15}fps batt (modo: $mode, backend: $(detect_backend))"
@@ -392,15 +404,16 @@ apply_all() {
 	[ -n "$arg" ] && gpu_args+=("$arg")
     done < <(gpu_env)
 
+    local target_path="$wallpaper_id"
+    [ -d "$WE_DIR/$wallpaper_id" ] && target_path="$WE_DIR/$wallpaper_id"
+
     # Con nuestro fork, --screen-all cubre todas las pantallas detectadas
     # y comparte la misma instancia CWallpaper para decodificar 1 sola vez
     # shellcheck disable=SC2086
-    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
-	--screen-all \
-	--bg "$wallpaper_id" \
+    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup "$ENGINE" run \
+	"$target_path" \
 	"${fork_args[@]}" \
-	"${flags[@]}" \
-	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	"${flags[@]}" > /tmp/we.log 2>&1 &
     disown $! 2>/dev/null || true
 
     echo "Wallpaper $wallpaper_id en todos los monitores @ $(effective_fps)fps AC / ${WE_FPS_BATTERY:-15}fps batt (modo: $mode)"
@@ -490,11 +503,35 @@ playlist_prev() {
 }
 
 stop_wallpaper() {
-    if pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 || pidof linux-wallpaper >/dev/null 2>&1; then
+    if pgrep -x we >/dev/null 2>&1 || pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1 || pidof linux-wallpaper >/dev/null 2>&1; then
 	kill_engine
 	echo "Wallpaper detenido"
     else
 	echo "No hay wallpaper activo"
+    fi
+}
+
+is_active() {
+    if pgrep -x we >/dev/null 2>&1 || pgrep -f 'linux-wallpaperengin[e]' >/dev/null 2>&1; then
+	echo "active"
+	return 0
+    else
+	echo "inactive"
+	return 1
+    fi
+}
+
+toggle_wallpaper() {
+    if is_active >/dev/null 2>&1; then
+	stop_wallpaper
+    else
+	local cid
+	cid=$(current_id 2>/dev/null)
+	if [ -n "$cid" ] && [ "$cid" != "playlist" ]; then
+	    apply_id "$cid"
+	else
+	    restore_wallpaper
+	fi
     fi
 }
 
@@ -619,6 +656,74 @@ screens_status() {
     fi
 }
 
+screens_json() {
+    python3 -c "
+import json, subprocess, os, re
+
+backend = '$(detect_backend)'
+screens = []
+
+if backend == 'sway':
+    try:
+        out = subprocess.check_output(['swaymsg', '-t', 'get_outputs'], text=True)
+        for o in json.loads(out):
+            rect = o.get('rect', {})
+            screens.append({
+                'name': o.get('name', ''),
+                'primary': bool(o.get('focused', False)),
+                'width': int(rect.get('width', 1920)),
+                'height': int(rect.get('height', 1080)),
+                'x': int(rect.get('x', 0)),
+                'y': int(rect.get('y', 0))
+            })
+    except Exception:
+        pass
+else:
+    try:
+        out = subprocess.check_output(['xrandr', '--listmonitors'], text=True)
+        for line in out.strip().split('\n')[1:]:
+            m = re.search(r'^\s*\d+:\s*([+*]+)?\S+\s+(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)\s+(\S+)', line)
+            if m:
+                flags, w, h, x, y, name = m.groups()
+                screens.append({
+                    'name': name,
+                    'width': int(w),
+                    'height': int(h),
+                    'x': int(x),
+                    'y': int(y),
+                    'primary': '*' in (flags or '')
+                })
+    except Exception:
+        pass
+
+if not screens:
+    screens = [{'name': 'eDP-1', 'width': 1920, 'height': 1080, 'x': 0, 'y': 0, 'primary': True}]
+
+sc_map = {}
+sc_conf = '$SCREENS_CONF'
+if os.path.exists(sc_conf):
+    with open(sc_conf) as f:
+        for line in f:
+            line = line.strip()
+            if not line or '=' not in line: continue
+            k, v = line.split('=', 1)
+            parts = v.split(':', 1)
+            sc_map[k] = {'id': parts[0], 'mode': parts[1] if len(parts) > 1 else 'normal'}
+
+cur_id = '$(current_id 2>/dev/null)'
+for s in screens:
+    name = s['name']
+    if name in sc_map:
+        s['current_id'] = sc_map[name]['id']
+        s['mode'] = sc_map[name]['mode']
+    else:
+        s['current_id'] = cur_id
+        s['mode'] = '${WE_MODE:-normal}'
+
+print(json.dumps(screens))
+"
+}
+
 multimonitor_cmd() {
     if [ -n "${1:-}" ]; then
 	case "$1" in
@@ -709,11 +814,10 @@ restore_screens() {
 	[ -n "$arg" ] && gpu_args+=("$arg")
     done < <(gpu_env)
 
-    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup $ENGINE \
+    env "${CURSOR_ENV[@]}" "${gpu_args[@]}" setsid nohup "$ENGINE" run \
 	"${screen_args[@]}" \
 	"${fork_args[@]}" \
-	"${flags[@]}" \
-	--assets-dir "$ASSETS_DIR" > /tmp/we.log 2>&1 &
+	"${flags[@]}" > /tmp/we.log 2>&1 &
     disown $! 2>/dev/null || true
 
     echo "Wallpapers independientes aplicados @ $(effective_fps)fps AC / ${WE_FPS_BATTERY:-15}fps batt"
@@ -737,55 +841,59 @@ with open('$CACHE_FILE', 'w') as f:
 	echo "Engine sin list --json: no se puede regenerar la caché"
 	return 1
     fi
+    make_previews >/dev/null 2>&1 &
 }
 
 # Fase 2: thumbs uniformes en $THUMBS_DIR/<id>.png
-#   video -> primer frame con ffmpeg (instantáneo, fiable)
-#   scene/web -> render real del engine en ventana 480x270 (necesita display)
+#   Usa preview.gif/jpg/png de Steam Workshop si está disponible;
+#   para vídeos usa ffmpeg con el mp4 si no hay preview explícito.
 make_previews() {
     local force=0 timeout="${WE_PREVIEW_TIMEOUT:-60}"
     [ "${1:-}" = "--force" ] && force=1
     ensure_cache || { echo "Sin caché y sin engine fork: no se puede"; return 1; }
     mkdir -p "$THUMBS_DIR"
     local done=0 skipped=0 failed=0
-    # NOTE: el loop lee del FD 3 y ffmpeg/engine llevan -nostdin + </dev/null:
+    # NOTE: el loop lee del FD 3 y ffmpeg lleva -nostdin + </dev/null:
     # sin eso ffmpeg devora el stdin del process substitution y las líneas
-    # llegan rasgadas al read (IDs truncados como 3256064096 -> 56064096).
-    while IFS='|' read -r id wtype wfile wpath <&3; do
+    # llegan rasgadas al read.
+    while IFS='|' read -r id wtype wfile wpath wpreview <&3; do
 	[ -z "$id" ] && continue
 	local thumb="$THUMBS_DIR/$id.png"
 	if [ $force -eq 0 ] && [ -s "$thumb" ]; then
 	    skipped=$((skipped + 1)); continue
 	fi
-	if [ "$wtype" = "video" ] && command -v ffmpeg >/dev/null 2>&1 && [ -f "$wpath/$wfile" ]; then
-	    if ffmpeg -nostdin -y -loglevel error -i "$wpath/$wfile" -vframes 1 "$thumb" 2>/dev/null \
+	local cand_src=""
+	if [ -n "$wpreview" ] && [ -f "$wpath/$wpreview" ]; then
+	    cand_src="$wpath/$wpreview"
+	else
+	    for cand in preview.gif preview.jpg preview.png preview.webp preview.jpeg; do
+		if [ -f "$wpath/$cand" ]; then
+		    cand_src="$wpath/$cand"
+		    break
+		fi
+	    done
+	fi
+	if [ -z "$cand_src" ] && [ "$wtype" = "video" ] && [ -f "$wpath/$wfile" ]; then
+	    cand_src="$wpath/$wfile"
+	fi
+
+	if [ -n "$cand_src" ] && command -v ffmpeg >/dev/null 2>&1; then
+	    if ffmpeg -nostdin -y -loglevel error -i "$cand_src" -vframes 1 "$thumb" 2>/dev/null \
 		&& [ -s "$thumb" ]; then
-		done=$((done + 1)); echo "thumb: $id (ffmpeg)"
+		done=$((done + 1)); echo "thumb: $id (ffmpeg: $(basename "$cand_src"))"
 	    else
 		failed=$((failed + 1)); echo "thumb FAIL: $id (ffmpeg)"
 	    fi
-	elif [ "$wtype" = "scene" ] || [ "$wtype" = "web" ]; then
-	    "$ENGINE" "$id" --screenshot "$thumb" --screenshot-delay 45 \
-		--profile lite --fps 15 -w 0x0x480x270 --silent --disable-mouse \
-		--assets-dir "$ASSETS_DIR" >/dev/null 2>&1 &
-	    local pid=$! waited=0
-	    while [ $waited -lt "$timeout" ] && [ ! -s "$thumb" ]; do
-		sleep 1; waited=$((waited + 1))
-	    done
-	    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
-	    if [ -s "$thumb" ]; then
-		done=$((done + 1)); echo "thumb: $id (engine)"
-	    else
-		failed=$((failed + 1)); echo "thumb FAIL: $id (engine, ¿display?)"
-	    fi
+	elif [ -n "$cand_src" ]; then
+	    cp "$cand_src" "$thumb" 2>/dev/null && done=$((done + 1)) || failed=$((failed + 1))
 	else
-	    echo "thumb SKIP: $id (tipo '$wtype' sin fuente)"
+	    echo "thumb SKIP: $id (tipo '$wtype' sin preview)"
 	    skipped=$((skipped + 1))
 	fi
     done 3< <(python3 -c "
 import json
 for it in json.load(open('$CACHE_FILE'))['items']:
-    print('%s|%s|%s|%s' % (it.get('id',''), it.get('type',''), it.get('file',''), it.get('path','')))
+    print('%s|%s|%s|%s|%s' % (it.get('id',''), it.get('type',''), it.get('file',''), it.get('path',''), it.get('preview','')))
 ")
     echo "Previews: $done ok, $skipped saltados, $failed fallos -> $THUMBS_DIR"
 }
@@ -913,7 +1021,7 @@ EOF
 apply_theme() {
     local img="$1"
     [ "${WE_THEME_ENABLED:-1}" = "0" ] && return 0
-    if [ "${WE_WALLPAPER_REGISTER:-1}" != "0" ] \
+    if [ "${WE_WALLPAPER_REGISTER:-0}" = "1" ] \
 	&& command -v dwm-settings-wallpaper >/dev/null 2>&1 && [ -f "$img" ]; then
 	dwm-settings-wallpaper apply "$img" fill >/dev/null 2>&1 || true
     fi
@@ -948,8 +1056,10 @@ for it in json.load(open('$CACHE_FILE'))['items']:
 }
 
 status() {
-    if pgrep -f "$ENGINE" > /dev/null; then
-	local pid=$(pgrep -f "$ENGINE" | head -1)
+    local pid
+    pid=$(pgrep -x we 2>/dev/null | head -1)
+    [ -z "$pid" ] && pid=$(pgrep -f 'linux-wallpaperengin[e]' 2>/dev/null | head -1)
+    if [ -n "$pid" ]; then
 	local cpu=$(ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' ')
 	local mem=$(ps -p "$pid" -o %mem= 2>/dev/null | tr -d ' ')
 	echo "Wallpaper activo (PID: $pid, CPU: ${cpu}%, RAM: ${mem}%, backend: $(detect_backend))"
@@ -983,6 +1093,8 @@ power_set() {
     local cur_multimonitor="${WE_MULTIMONITOR:-clone}"
     local cur_theme="${WE_TOOLKIT_THEME:-auto}"
     local cur_gpu="${WE_GPU:-auto}"
+    local cur_audio="${WE_AUDIO:-0}"
+    local cur_vol="${WE_VOLUME:-60}"
     for kv in "$@"; do
 	k="${kv%%=*}"; v="${kv#*=}"
 	[ "$k" != "$kv" ] || { echo "Ignorada (sin =): $kv"; ok=0; continue; }
@@ -1078,6 +1190,19 @@ power_set() {
 		    *) echo "WE_GPU inválido: $v (auto|intel|nvidia)"; ok=0 ;;
 		esac
 		;;
+	    WE_AUDIO)
+		case "$v" in
+		    0|1) cur_audio="$v" ;;
+		    *) echo "WE_AUDIO inválido: $v (0|1)"; ok=0 ;;
+		esac
+		;;
+	    WE_VOLUME)
+		if [[ "$v" =~ ^[0-9]+$ ]] && [ "$v" -ge 0 ] && [ "$v" -le 100 ]; then
+		    cur_vol="$v"
+		else
+		    echo "WE_VOLUME inválido: $v (0-100)"; ok=0
+		fi
+		;;
 	    *)
 		echo "Clave desconocida: $k"; ok=0
 		;;
@@ -1099,10 +1224,48 @@ WE_HWDEC=$cur_hwdec
 WE_MULTIMONITOR=$cur_multimonitor
 WE_TOOLKIT_THEME=$cur_theme
 WE_GPU=$cur_gpu
+WE_AUDIO=$cur_audio
+WE_VOLUME=$cur_vol
 EOF
     WE_TOOLKIT_THEME="$cur_theme"
     WE_GPU="$cur_gpu"
     echo "power: guardado en $POWER_CONF (aplica al próximo apply/restore)"
+}
+
+volume_cmd() {
+    if [ -n "${1:-}" ]; then
+	if [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 0 ] && [ "$1" -le 100 ]; then
+	    power_set "WE_VOLUME=$1"
+	    echo "Volumen fijado a $1%"
+	else
+	    echo "Uso: we-wallpaper volume <0-100>"
+	    return 1
+	fi
+    else
+	echo "Volumen: ${WE_VOLUME:-60}%"
+    fi
+}
+
+mute_cmd() {
+    case "${1:-toggle}" in
+	on|1)
+	    power_set "WE_AUDIO=0"
+	    echo "Audio silenciado"
+	    ;;
+	off|0)
+	    power_set "WE_AUDIO=1"
+	    echo "Audio activado"
+	    ;;
+	toggle|*)
+	    if [ "${WE_AUDIO:-0}" = "1" ]; then
+		power_set "WE_AUDIO=0"
+		echo "Audio silenciado"
+	    else
+		power_set "WE_AUDIO=1"
+		echo "Audio activado"
+	    fi
+	    ;;
+    esac
 }
 
 # Fase GUI-super: catálogos web estilo Aura (solo APIs oficiales JSON).
@@ -1417,11 +1580,43 @@ os.replace(p + '.tmp', p)
 }
 
 catalog_get() {
-    local ref="${1:-}" id="${2:-}"
+    local ref="${1:-}" arg2="${2:-}" arg3="${3:-}"
     [ -n "$ref" ] || { echo "Uso: we-wallpaper catalog-get <ref> [id|4k] [título]"; return 1; }
-    # $3 = título del catálogo (bonito en Local); con motionbgs $2 = calidad.
-    WE_FETCH_TITLE="${3:-}"
     local src="${ref%%:*}" key="${ref#*:}"
+
+    local title="" id="" quality="hd"
+    [ -n "$arg3" ] && title="$arg3"
+
+    # Si arg2 viene con espacios o corchetes, o sólo se pasó título en vez de ID:
+    if [[ "$arg2" =~ [[:space:]] || "$arg2" == *"["* || "$arg2" == *"]"* ]]; then
+	[ -z "$title" ] && title="$arg2"
+	arg2=""
+    fi
+
+    if [ "$src" = "motionbgs" ]; then
+	case "$arg2" in
+	    4k) quality="4k" ;;
+	    hd|"") quality="hd" ;;
+	    *) id="$arg2"; quality="hd" ;;
+	esac
+    else
+	id="$arg2"
+    fi
+
+    # Si $id está vacío o inválido, asignar el ID canónico
+    if [ -z "$id" ]; then
+	case "$src" in
+	    bing)       id="bing-$key" ;;
+	    desktophut) id="desktophut-$key" ;;
+	    wallhaven)  id="wallhaven-$key" ;;
+	    motionbgs)  id="motionbgs-$key-$quality" ;;
+	    minimal)    id="${key%.*}" ;;
+	    *)          id="${src}-$key" ;;
+	esac
+    fi
+
+    WE_FETCH_TITLE="$title"
+
     case "$src" in
 	bing)
 	    local url="https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8"
@@ -1460,7 +1655,7 @@ for img in data.get('data', []):
 		fi
 	    fi
 	    [ -n "$file" ] || { echo "No encontrado en Bing: $key (prueba 'catalog bing archive')"; return 1; }
-	    fetch_url "$file" "${id:-bing-$key}"
+	    fetch_url "$file" "$id"
 	    ;;
 	wallhaven)
 	    local detail
@@ -1475,31 +1670,50 @@ print(d.get('path', ''))
 	    ;;
 	motionbgs)
 	    # catalog-get motionbgs:<id> [hd|4k|<id-custom>] [título]
-	    local q="hd" wid="motionbgs-$key-hd"
-	    case "${2:-}" in
-		4k) q="4k"; wid="motionbgs-$key-4k" ;;
-		hd|"") ;;
-		*) wid="$2" ;;
-	    esac
+	    local wid="$id"
 	    [ -d "$WE_DIR/$wid" ] && { echo "Ya existe: $wid (usa otro id)"; return 1; }
 	    WE_FETCH_UA="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
 	    WE_FETCH_REFERER="https://motionbgs.com/" \
 	    WE_FETCH_EXT="mp4" \
 	    WE_FETCH_NAME="motionbgs-$key.mp4" \
-		fetch_url "https://motionbgs.com/dl/$q/$key/" "$wid"
+		fetch_url "https://motionbgs.com/dl/$quality/$key/" "$wid"
 	    ;;
 	desktophut)
 	    # catalog-get desktophut:<slug> [id-custom] [título]
-	    local wid="desktophut-$key"
-	    [ -n "${2:-}" ] && wid="$2"
+	    local wid="$id"
 	    [ -d "$WE_DIR/$wid" ] && { echo "Ya existe: $wid (usa otro id)"; return 1; }
-	    local mp4_url
-	    mp4_url=$(curl -fsSL -m 25 -A "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
-		"https://www.desktophut.com/$key" 2>/dev/null \
-		| python3 -c "
+	    local page_html
+	    page_html=$(curl -fsSL -m 25 -A "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
+		"https://www.desktophut.com/$key" 2>/dev/null)
+	    local mp4_url=""
+	    local dh_path
+	    dh_path=$(echo "$page_html" | python3 -c "
 import re, sys
 raw = sys.stdin.read()
-m = re.search(r'href=[\"\'](https://www\.desktophut\.com/files/[^\"\']+\.mp4)[\"\']', raw)
+m = re.search(r'href=[\"\']([^\"\']*/dh-file/\d+)[\"\']', raw)
+if not m:
+    m = re.search(r'(/dh-file/\d+)', raw)
+if m:
+    u = m.group(1)
+    if u.startswith('/'):
+        u = 'https://www.desktophut.com' + u
+    print(u)
+" 2>/dev/null)
+	    if [ -n "$dh_path" ]; then
+		mp4_url=$(curl -sIL -m 15 -A "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
+		    -H "Sec-Fetch-Dest: document" \
+		    -H "Sec-Fetch-Mode: navigate" \
+		    -H "Sec-Fetch-Site: same-origin" \
+		    --referer "https://www.desktophut.com/$key" \
+		    "$dh_path" 2>/dev/null | grep -i '^location:' | tail -n 1 | awk '{print $2}' | tr -d '\r\n')
+	    fi
+	    if [ -z "$mp4_url" ]; then
+		mp4_url=$(echo "$page_html" | python3 -c "
+import re, sys
+raw = sys.stdin.read()
+m = re.search(r'<source[^>]+src=[\"\']([^\"\']+\.mp4)[\"\']', raw, re.IGNORECASE)
+if not m:
+    m = re.search(r'href=[\"\'](https://www\.desktophut\.com/files/[^\"\']+\.mp4)[\"\']', raw)
 if not m:
     m = re.search(r'href=[\"\']([^\"\']+\.mp4)[\"\']', raw)
 if m:
@@ -1508,6 +1722,7 @@ if m:
         u = 'https://www.desktophut.com' + u
     print(u)
 " 2>/dev/null)
+	    fi
 	    [ -n "$mp4_url" ] || { echo "desktophut: no se encontró archivo MP4 para '$key'"; return 1; }
 	    WE_FETCH_UA="Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0" \
 	    WE_FETCH_REFERER="https://www.desktophut.com/$key" \
@@ -1540,36 +1755,40 @@ props() {
     [ -d "$WE_DIR/$id" ] || { echo "Wallpaper '$id' no encontrado"; return 1; }
     local saved="$PROPS_DIR/$id.conf"
     if [ $# -eq 0 ]; then
-	SAVED="$saved" "$ENGINE" --list-properties "$id" --assets-dir "$ASSETS_DIR" 2>/dev/null \
-	    | python3 -c "
+	python3 -c "
 import json, os, sys
+
+id_dir = '$WE_DIR/$id'
+proj_file = os.path.join(id_dir, 'project.json')
 saved = {}
-sp = os.environ.get('SAVED', '')
-if sp and os.path.isfile(sp):
-    for line in open(sp):
-        line = line.strip()
-        if not line or line.startswith('#') or '=' not in line:
-            continue
-        k, v = line.split('=', 1)
-        saved[k.strip()] = v.strip()
-name = typ = text = value = None
-def flush():
-    if name is None:
-        return
-    v = saved.get(name, value or '')
-    mark = '*' if name in saved else ''
-    print('%s\t%s\t%s\t%s\t%s' % (name, typ or 'unknown', text or name, v, mark))
-for line in sys.stdin:
-    line = line.rstrip('\n')
-    if line and not line.startswith((' ', '\t')) and ' - ' in line:
-        flush()
-        name, typ = [s.strip() for s in line.split(' - ', 1)]
-        text = value = None
-    elif line.strip().startswith('Text:'):
-        text = line.split('Text:', 1)[1].strip()
-    elif line.strip().startswith('Value:'):
-        value = line.split('Value:', 1)[1].strip()
-flush()
+sp = '$saved'
+if os.path.isfile(sp):
+    with open(sp) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            k, v = line.split('=', 1)
+            saved[k.strip()] = v.strip()
+
+if os.path.isfile(proj_file):
+    try:
+        with open(proj_file) as f:
+            data = json.load(f)
+        props = data.get('general', {}).get('properties', {})
+        for name, prop in props.items():
+            typ = prop.get('type', 'text')
+            text = prop.get('text', name)
+            val = str(prop.get('value', ''))
+            is_saved = '*' if name in saved else ''
+            if is_saved:
+                val = saved[name]
+            mn = str(prop.get('min', ''))
+            mx = str(prop.get('max', ''))
+            st = str(prop.get('step', ''))
+            print(f'{name}\t{typ}\t{text}\t{val}\t{is_saved}\t{mn}\t{mx}\t{st}')
+    except Exception as e:
+        sys.stderr.write(str(e) + '\n')
 "
 	return 0
     fi
@@ -1651,8 +1870,17 @@ for it in cache.get('items', []):
     tp = os.path.join(thumbs, tid + '.png')
     if not os.path.isfile(tp):
         pv, pp = it.get('preview', ''), ''
+        pdir = it.get('path', '')
         if pv:
-            pp = os.path.join(it.get('path', ''), pv)
+            cand = os.path.join(pdir, pv)
+            if os.path.isfile(cand):
+                pp = cand
+        if not pp and pdir:
+            for cand_name in ['preview.gif', 'preview.jpg', 'preview.png', 'preview.webp', 'preview.jpeg']:
+                cand = os.path.join(pdir, cand_name)
+                if os.path.isfile(cand):
+                    pp = cand
+                    break
         tp = pp if pp and os.path.isfile(pp) else ''
     items.append({
         'id': tid,
@@ -1772,6 +2000,8 @@ print()
 	"$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
 	echo "Caché actualizada"
     fi
+    refresh_library >/dev/null 2>&1 || true
+    gallery_json >/dev/null 2>&1 || true
 }
 
 # Fase GUI-super: import <video-local> [id] [--title "..."].
@@ -1820,6 +2050,8 @@ print()
 	"$ENGINE" --list-library --refresh >/dev/null 2>&1 || true
 	echo "Caché actualizada"
     fi
+    refresh_library >/dev/null 2>&1 || true
+    gallery_json >/dev/null 2>&1 || true
 }
 
 # Fase MPRIS-plan: fetch <url> [id]. Video (mp4/webm/mov/m4v) -> carpeta
@@ -1827,7 +2059,6 @@ print()
 # para feh (el engine solo representa video/scene/web, no estáticos sueltos).
 # Títulos bonitos para lo instalado (id -> título del catálogo), para que
 # Local no muestre "img-mlope9" ni "motionbgs-10050-hd".
-TITLES_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/we-wallpaper/titles.json"
 
 save_title() {
     [ -n "${WE_FETCH_TITLE:-}" ] || return 0
@@ -1848,11 +2079,28 @@ os.replace(tmp, p)
 
 # Miniatura inmediata de un vídeo recién instalado (ffmpeg, sin display).
 ensure_thumb() {
-    local id="$1" thumb="$THUMBS_DIR/$id.png"
-    [ -s "$thumb" ] && return 0
+    local id="$1" file_hint="${2:-}"
+    local thumb="$THUMBS_DIR/$id.png"
     command -v ffmpeg >/dev/null 2>&1 || return 0
-    local wfile
-    wfile=$(ID="$id" CACHE_FILE="$CACHE_FILE" python3 -c "
+
+    local wfile=""
+    if [ -n "$file_hint" ] && [ -f "$file_hint" ]; then
+	wfile="$file_hint"
+    elif [ -d "$WE_DIR/$id" ]; then
+	if [ -f "$WE_DIR/$id/project.json" ]; then
+	    local pj_file
+	    pj_file=$(python3 -c "import json; print(json.load(open('$WE_DIR/$id/project.json')).get('file',''))" 2>/dev/null)
+	    [ -n "$pj_file" ] && [ -f "$WE_DIR/$id/$pj_file" ] && wfile="$WE_DIR/$id/$pj_file"
+	fi
+	if [ -z "$wfile" ]; then
+	    for f in "$WE_DIR/$id"/*.{mp4,webm,m4v,mov}; do
+		[ -f "$f" ] && { wfile="$f"; break; }
+	    done
+	fi
+    fi
+
+    if [ -z "$wfile" ] && [ -s "$CACHE_FILE" ]; then
+	wfile=$(ID="$id" CACHE_FILE="$CACHE_FILE" python3 -c "
 import json, os
 try:
     c = json.load(open(os.environ['CACHE_FILE']))
@@ -1863,10 +2111,20 @@ for it in c.get('items', []):
         print(os.path.join(it.get('path', ''), it['file']))
         break
 " 2>/dev/null)
+    fi
+
     [ -n "$wfile" ] && [ -f "$wfile" ] || return 0
     mkdir -p "$THUMBS_DIR" 2>/dev/null
-    ffmpeg -nostdin -y -loglevel error -i "$wfile" -vframes 1 "$thumb" 2>/dev/null && [ -s "$thumb" ] \
-	&& echo "thumb: $id"
+    ffmpeg -nostdin -y -loglevel error -ss 00:00:01 -i "$wfile" -vframes 1 "$thumb" 2>/dev/null
+    if [ ! -s "$thumb" ]; then
+	ffmpeg -nostdin -y -loglevel error -i "$wfile" -vframes 1 "$thumb" 2>/dev/null
+    fi
+    if [ -s "$thumb" ]; then
+	if [ -d "$WE_DIR/$id" ]; then
+	    cp -f "$thumb" "$WE_DIR/$id/preview.png" 2>/dev/null
+	fi
+	echo "thumb: $id"
+    fi
 }
 
 fetch_url() {
@@ -1918,7 +2176,9 @@ fetch_url() {
 	    fi
 	    register_video_file "$dir" "$id" "$file" "fetched $url" || return 1
 	    save_title "$id"
-	    ensure_thumb "$id"
+	    ensure_thumb "$id" "$dir/$file"
+	    refresh_library >/dev/null 2>&1 || true
+	    gallery_json >/dev/null 2>&1 || true
 	    ;;
 	jpg|jpeg|png|webp|bmp)
 	    local lab="$HOME/Pictures/backgrounds-lab"
@@ -1928,6 +2188,8 @@ fetch_url() {
 	    dl_run "$dest" "$url" || { echo "Descarga fallida"; return 1; }
 	    save_title "$id"
 	    echo "Imagen en $dest (feh --bg-fill $dest)"
+	    refresh_library >/dev/null 2>&1 || true
+	    gallery_json >/dev/null 2>&1 || true
 	    ;;
 	*)
 	    echo "Extensión no soportada: .$ext (video: mp4/webm/m4v/mov; imagen: jpg/png/webp/bmp)"
@@ -1999,6 +2261,8 @@ usage() {
   multimonitor [clone|single]           Ver o fijar modo multimonitor"
     echo "  restore                               Restaurar ultimo wallpaper guardado"
     echo "  stop                                  Detener"
+    echo "  toggle                                Alternar encendido/apagado del wallpaper"
+    echo "  is-active                             Comprobar si el wallpaper está activo"
     echo "  status                                Ver estado"
     echo "  power                                 Ver perfil de energía (K=V)"
     echo "  power-set CLAVE=VALOR ...             Guardar perfil de energía"
@@ -2092,12 +2356,17 @@ EOF
     apply-all)  apply_all "$2" "$3" ;;
     apply-screen) apply_screen "$2" "$3" "$4" ;;
     screens)    screens_status ;;
+    screens-json) screens_json ;;
     multimonitor) multimonitor_cmd "$2" ;;
+    volume)     volume_cmd "$2" ;;
+    mute)       mute_cmd "$2" ;;
     playlist-play) playlist_play "$2" "$3" ;;
     playlist-next) playlist_next ;;
     playlist-prev) playlist_prev ;;
     restore)    restore_wallpaper ;;
     stop)       stop_wallpaper ;;
+    toggle)     toggle_wallpaper ;;
+    is-active|is_active) is_active ;;
     status)     status ;;
     current-id) current_id ;;
     power)      power_show ;;

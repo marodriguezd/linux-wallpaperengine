@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <random>
 #include <string>
 #include <unordered_map>
@@ -33,6 +34,7 @@ struct CompiledPass {
     std::unordered_map<std::string, core::Vec4> vec4_uniforms;
     std::unordered_map<std::string, int> int_uniforms;
     std::vector<std::shared_ptr<gfx::Texture>> textures;
+    std::vector<core::Vec4> texture_resolutions;
     gfx::BlendMode blend = gfx::BlendMode::normal;
     bool compose = false;
 };
@@ -52,6 +54,7 @@ struct ParticleInstance {
     float lifetime = 1.0F;
     float age = 0.0F;
     bool alive = false;
+    int random_frame = -1;
 
     struct {
 	core::Vec3 color { 1.0F, 1.0F, 1.0F };
@@ -68,6 +71,14 @@ struct ParticleInstance {
 	float phase = 0.0F;
 	float base = 1.0F;
     } oscillate_alpha {};
+
+    struct {
+	bool initialized = false;
+	core::Vec3 frequency {};
+	core::Vec3 scale {};
+	core::Vec3 phase {};
+	core::Vec3 current_offset {};
+    } oscillate_position {};
 };
 
 enum class EmitterType : std::uint8_t {
@@ -126,8 +137,8 @@ struct ParticleOperatorDef {
     float drag = 0.0F;
     float fade_in_time = 0.0F;
     float fade_out_time = 1.0F;
-    float frequency_min = 0.0F;
-    float frequency_max = 0.0F;
+    float frequency_min = 1.0F;
+    float frequency_max = 2.0F;
     float scale_min = 0.0F;
     float scale_max = 1.0F;
     float phase_min = 0.0F;
@@ -155,6 +166,12 @@ struct ParticleSystemState {
     gfx::BlendMode blend = gfx::BlendMode::normal;
     std::uint32_t max_count = 1000;
     float start_time = 0.0F;
+    std::string animation_mode = "sequence";
+    float sequence_multiplier = 1.0F;
+    std::vector<TextureFrame> frames;
+    float duration = 0.0F;
+    int texture_width = 0;
+    int texture_height = 0;
     std::vector<ParticleEmitterDef> emitters;
     std::vector<ParticleInitializerDef> initializers;
     std::vector<ParticleOperatorDef> operators;
@@ -169,21 +186,32 @@ struct ParticleSystemState {
     void update (float dt, float current_time);
     void prewarm (float seconds);
     void spawn_particle (ParticleInstance& p, const ParticleEmitterDef& emitter);
+
+    [[nodiscard]] bool has_animation () const noexcept { return !this->frames.empty (); }
+    [[nodiscard]] core::Rect get_particle_uv (const ParticleInstance& p) const;
 };
+
+struct SceneRendererOptions {
+    bool hardware_decode = true;
+    bool audio_enabled = false;
+    float volume = 1.0F;
+};
+
+struct SceneAudio;
 
 // Turns scene.json image objects into textured quads and post-processing layers.
 class SceneRenderer {
 public:
-    SceneRenderer () = default;
-    ~SceneRenderer () = default;
+    SceneRenderer ();
+    ~SceneRenderer ();
     SceneRenderer (const SceneRenderer&) = delete;
     SceneRenderer& operator= (const SceneRenderer&) = delete;
-    SceneRenderer (SceneRenderer&& other) noexcept = default;
-    SceneRenderer& operator= (SceneRenderer&& other) noexcept = default;
+    SceneRenderer (SceneRenderer&& other) noexcept;
+    SceneRenderer& operator= (SceneRenderer&& other) noexcept;
 
     // Requires a current OpenGL context: textures are uploaded here.
     [[nodiscard]] static std::expected<SceneRenderer, core::Error>
-    build (const Scene& scene, const AssetContainer& assets);
+    build (const Scene& scene, const AssetContainer& assets, const SceneRendererOptions& options = {});
 
     void render (gfx::Renderer& renderer) const;
 
@@ -192,17 +220,35 @@ public:
     // Must be called after presenting frames so mpv can pace decoding.
     void report_video_swap ();
 
+    void update_input (std::optional<core::Vec2> normalized_cursor, float dt);
+
     [[nodiscard]] std::size_t layer_count () const noexcept { return this->layers_.size (); }
     [[nodiscard]] const core::Mat4& view_projection () const noexcept { return this->view_projection_; }
     [[nodiscard]] core::Color clear_color () const noexcept { return this->clear_color_; }
     [[nodiscard]] int scene_width () const noexcept { return this->scene_width_; }
     [[nodiscard]] int scene_height () const noexcept { return this->scene_height_; }
     [[nodiscard]] bool uses_offscreen () const noexcept { return this->uses_offscreen_; }
+    [[nodiscard]] const SceneCamera& camera () const noexcept { return this->camera_; }
+    [[nodiscard]] core::Vec2 parallax_displacement () const noexcept { return this->parallax_displacement_; }
+    [[nodiscard]] const std::array<core::Vec2, 4>& layer_corners (std::size_t index) const {
+	return this->layers_.at (index).corners;
+    }
+    [[nodiscard]] const std::array<core::Vec2, 4>& layer_base_corners (std::size_t index) const {
+	return this->layers_.at (index).base_corners;
+    }
+    [[nodiscard]] core::Rect layer_uv (std::size_t index, float elapsed = 0.0F) const;
+    [[nodiscard]] std::size_t layer_frame_count (std::size_t index) const {
+	return this->layers_.at (index).frames.size ();
+    }
+    [[nodiscard]] gfx::BlendMode layer_blend (std::size_t index) const { return this->layers_.at (index).blend; }
+    [[nodiscard]] bool has_audio () const noexcept { return this->audio_ != nullptr; }
 
 private:
     struct Layer {
 	std::shared_ptr<gfx::Texture> texture;
 	std::array<core::Vec2, 4> corners;
+	std::array<core::Vec2, 4> base_corners {};
+	core::Vec2 parallax_depth { 0.0F, 0.0F };
 	core::Rect uv;
 	core::Color tint;
 	gfx::BlendMode blend = gfx::BlendMode::normal;
@@ -233,6 +279,9 @@ private:
 	bool is_effect = false;
 	bool fullscreen = false;
 	std::vector<EffectInstance> effects;
+	mutable std::optional<gfx::Framebuffer> fbo_a;
+	mutable std::optional<gfx::Framebuffer> fbo_b;
+	mutable gfx::Texture effect_view;
 	bool is_particle = false;
 	std::size_t particle_system_index = 0;
 	int order_index = 0;
@@ -244,6 +293,7 @@ private:
     ) const;
 
     void render_particles (gfx::Renderer& renderer, ParticleSystemState& ps, float dt, float current_time) const;
+    [[nodiscard]] core::Rect calculate_layer_uv (const Layer& layer, float elapsed) const;
 
     std::vector<Layer> layers_;
     std::vector<gfx::PointLight> lights_;
@@ -268,6 +318,9 @@ private:
     gfx::GlBuffer quad_vbo_;
     mutable std::chrono::steady_clock::time_point last_render_time_ { std::chrono::steady_clock::now () };
     mutable std::vector<ParticleSystemState> particle_systems_;
+    SceneCamera camera_;
+    core::Vec2 parallax_displacement_ { 0.0F, 0.0F };
+    std::unique_ptr<SceneAudio> audio_;
 };
 
 } // namespace we::scene

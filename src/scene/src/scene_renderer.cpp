@@ -3,6 +3,7 @@
 #include "we/core/log.hpp"
 #include "we/core/text.hpp"
 
+#include <mpv/client.h>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -10,16 +11,75 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <fstream>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 namespace we::scene {
+
+struct SceneAudio {
+    mpv_handle* mpv = nullptr;
+    std::vector<std::filesystem::path> temp_files;
+
+    SceneAudio () = default;
+    ~SceneAudio () {
+	if (this->mpv != nullptr) {
+	    mpv_terminate_destroy (this->mpv);
+	    this->mpv = nullptr;
+	}
+	for (const auto& temp : this->temp_files) {
+	    std::error_code ec;
+	    std::filesystem::remove (temp, ec);
+	}
+    }
+
+    SceneAudio (const SceneAudio&) = delete;
+    SceneAudio& operator= (const SceneAudio&) = delete;
+    SceneAudio (SceneAudio&& other) noexcept : mpv (other.mpv), temp_files (std::move (other.temp_files)) {
+	other.mpv = nullptr;
+    }
+    SceneAudio& operator= (SceneAudio&& other) noexcept {
+	if (this != &other) {
+	    if (this->mpv != nullptr) {
+		mpv_terminate_destroy (this->mpv);
+	    }
+	    for (const auto& temp : this->temp_files) {
+		std::error_code ec;
+		std::filesystem::remove (temp, ec);
+	    }
+	    this->mpv = other.mpv;
+	    this->temp_files = std::move (other.temp_files);
+	    other.mpv = nullptr;
+	}
+	return *this;
+    }
+};
+
+SceneRenderer::SceneRenderer () = default;
+SceneRenderer::~SceneRenderer () = default;
+SceneRenderer::SceneRenderer (SceneRenderer&& other) noexcept = default;
+SceneRenderer& SceneRenderer::operator= (SceneRenderer&& other) noexcept = default;
 namespace {
+
+    bool is_software_gl () {
+	const auto* renderer = reinterpret_cast<const char*> (glGetString (GL_RENDERER));
+	if (renderer == nullptr) {
+	    return false;
+	}
+	std::string_view r { renderer };
+	for (const std::string_view name : { "llvmpipe", "softpipe", "swrast", "SwiftShader" }) {
+	    if (r.find (name) != std::string_view::npos) {
+		return true;
+	    }
+	}
+	return false;
+    }
 
     core::Vec2 rotate (core::Vec2 value, float angle_radians) {
 	const float cosine = std::cos (angle_radians);
@@ -27,11 +87,11 @@ namespace {
 	return { value.x * cosine - value.y * sine, value.x * sine + value.y * cosine };
     }
 
-    // Wallpaper Engine scenes place objects in a top-left origin space with y growing downward.
-    // The renderer draws in a centered y-up space, so flip y and center x and y.
+    // Wallpaper Engine scenes place objects in a centered space where y grows upward from the
+    // bottom of the canvas. The renderer also draws in a centered y-up space.
     core::Vec2 scene_to_world (core::Vec2 point, int scene_width, int scene_height) {
 	return { point.x - static_cast<float> (scene_width) * 0.5F,
-		 static_cast<float> (scene_height) * 0.5F - point.y };
+		 point.y - static_cast<float> (scene_height) * 0.5F };
     }
 
     gfx::BlendMode parse_blend (std::string_view value) {
@@ -68,7 +128,9 @@ namespace {
 	return std::nullopt;
     }
 
-    std::string resolve_includes (const AssetContainer& assets, std::string source, int depth = 0) {
+    std::string resolve_includes (
+	const AssetContainer& assets, std::string source, std::unordered_set<std::string>& included_files, int depth = 0
+    ) {
 	if (depth > 16) {
 	    return source;
 	}
@@ -95,23 +157,43 @@ namespace {
 
 	    const std::string inc_file = source.substr (q1 + 1, q2 - q1 - 1);
 	    std::string replacement;
-	    std::optional<std::string> inc_text;
 
-	    const std::array<std::string, 3> candidates
-		= { inc_file, "shaders/" + inc_file, "shaders/effects/" + inc_file };
-
-	    for (const auto& candidate : candidates) {
-		auto text = assets.read_text (candidate);
-		if (text && !text->empty ()) {
-		    inc_text = *text;
-		    break;
-		}
-	    }
-
-	    if (inc_text) {
-		replacement = resolve_includes (assets, *inc_text, depth + 1) + "\n";
+	    if (included_files.contains (inc_file)) {
+		replacement = "\n";
 	    } else {
-		replacement = "// include not found: " + inc_file + "\n";
+		std::optional<std::string> inc_text;
+		std::string resolved_path;
+
+		const std::array<std::string, 3> candidates
+		    = { inc_file, "shaders/" + inc_file, "shaders/effects/" + inc_file };
+
+		for (const auto& candidate : candidates) {
+		    if (included_files.contains (candidate)) {
+			inc_text = "";
+			resolved_path = candidate;
+			break;
+		    }
+		    auto text = assets.read_text (candidate);
+		    if (text && !text->empty ()) {
+			inc_text = *text;
+			resolved_path = candidate;
+			break;
+		    }
+		}
+
+		if (inc_text) {
+		    included_files.insert (inc_file);
+		    if (!resolved_path.empty ()) {
+			included_files.insert (resolved_path);
+		    }
+		    if (!inc_text->empty ()) {
+			replacement = resolve_includes (assets, *inc_text, included_files, depth + 1) + "\n";
+		    } else {
+			replacement = "\n";
+		    }
+		} else {
+		    replacement = "// include not found: " + inc_file + "\n";
+		}
 	    }
 
 	    const std::size_t replace_len
@@ -121,6 +203,11 @@ namespace {
 	}
 
 	return source;
+    }
+
+    std::string resolve_includes (const AssetContainer& assets, std::string source, int depth = 0) {
+	std::unordered_set<std::string> included_files;
+	return resolve_includes (assets, std::move (source), included_files, depth);
     }
 
     std::string strip_version_directive (std::string source) {
@@ -187,25 +274,26 @@ namespace {
 	    }
 
 	    if (trimmed.starts_with ("uniform ")) {
+		const std::size_t semicolon = trimmed.find (';');
 		const std::size_t comment_pos = trimmed.find ("//");
-		if (comment_pos != std::string_view::npos) {
-		    const std::size_t brace = trimmed.find ('{', comment_pos);
-		    const std::size_t semicolon = trimmed.find (';');
 
-		    if (semicolon != std::string_view::npos && semicolon < comment_pos) {
-			const std::string decl (trimmed.substr (8, semicolon - 8));
-			std::istringstream wstream (decl);
-			std::string type;
-			std::string name;
+		if (semicolon != std::string_view::npos
+		    && (comment_pos == std::string_view::npos || semicolon < comment_pos)) {
+		    const std::string decl (trimmed.substr (8, semicolon - 8));
+		    std::istringstream wstream (decl);
+		    std::string type;
+		    std::string name;
 
-			if (wstream >> type >> name) {
-			    const std::size_t bpos = name.find ('[');
-			    if (bpos != std::string::npos) {
-				name = name.substr (0, bpos);
-			    }
+		    if (wstream >> type >> name) {
+			const std::size_t bpos = name.find ('[');
+			if (bpos != std::string::npos) {
+			    name = name.substr (0, bpos);
+			}
 
-			    uniform_types[name] = type;
+			uniform_types[name] = type;
 
+			if (comment_pos != std::string_view::npos) {
+			    const std::size_t brace = trimmed.find ('{', comment_pos);
 			    if (brace != std::string_view::npos) {
 				auto uj = nlohmann::json::parse (trimmed.substr (brace), nullptr, false);
 				if (!uj.is_discarded ()) {
@@ -247,6 +335,12 @@ namespace {
 
 	    if (const auto mit = uniform_mat_keys.find (name); mit != uniform_mat_keys.end ()) {
 		if (const auto cit = constant_values.find (mit->second); cit != constant_values.end ()) {
+		    raw_val = cit->second;
+		}
+	    }
+
+	    if (raw_val.empty ()) {
+		if (const auto cit = constant_values.find (name); cit != constant_values.end ()) {
 		    raw_val = cit->second;
 		}
 	    }
@@ -356,7 +450,8 @@ namespace {
 
     std::optional<CompiledPass> compile_effect_pass (
 	const AssetContainer& assets, const EffectPass& pass_def,
-	const std::function<std::shared_ptr<gfx::Texture> (const std::string&, const char*)>& load_extra_texture
+	const std::function<std::shared_ptr<gfx::Texture> (const std::string&, const char*)>& load_extra_texture,
+	const std::unordered_map<std::string, TextureData>* cached_data = nullptr
     ) {
 	if (pass_def.shader.empty ()) {
 	    core::log_warn ("effect pass has no shader in material '", pass_def.material, "'");
@@ -403,8 +498,30 @@ namespace {
 	    }
 	    if (tpath.empty () || tpath.starts_with ("_rt_")) {
 		cpass.textures.push_back (nullptr);
+		cpass.texture_resolutions.push_back (core::Vec4 { 0.0F, 0.0F, 0.0F, 0.0F });
 	    } else {
-		cpass.textures.push_back (load_extra_texture (tpath, "effect texture"));
+		auto tex = load_extra_texture (tpath, "effect texture");
+		cpass.textures.push_back (tex);
+		core::Vec4 res { 0.0F, 0.0F, 0.0F, 0.0F };
+		if (cached_data != nullptr) {
+		    if (const auto it = cached_data->find (tpath); it != cached_data->end ()) {
+			const float tw = static_cast<float> (
+			    it->second.texture_width > 0 ? it->second.texture_width : it->second.width
+			);
+			const float th = static_cast<float> (
+			    it->second.texture_height > 0 ? it->second.texture_height : it->second.height
+			);
+			const float w = static_cast<float> (it->second.width);
+			const float h = static_cast<float> (it->second.height);
+			res = core::Vec4 { tw, th, w, h };
+		    }
+		}
+		if (res.x <= 0.0F && tex != nullptr) {
+		    const float w = static_cast<float> (tex->width ());
+		    const float h = static_cast<float> (tex->height ());
+		    res = core::Vec4 { w, h, w, h };
+		}
+		cpass.texture_resolutions.push_back (res);
 	    }
 	}
 
@@ -416,6 +533,56 @@ namespace {
 
 	if (!combos.contains ("VERTICAL")) {
 	    combos["VERTICAL"] = 0;
+	}
+
+	if (!combos.contains ("DUALWAVES")) {
+	    if (pass_def.constant_values.contains ("direction2") || pass_def.constant_values.contains ("speed2")
+		|| pass_def.constant_values.contains ("scale2")) {
+		combos["DUALWAVES"] = 1;
+	    } else {
+		combos["DUALWAVES"] = 0;
+	    }
+	}
+
+	if (!combos.contains ("PERSPECTIVE")) {
+	    if (pass_def.constant_values.contains ("point0") || pass_def.constant_values.contains ("perspective")) {
+		combos["PERSPECTIVE"] = 1;
+	    } else {
+		combos["PERSPECTIVE"] = 0;
+	    }
+	}
+
+	if (!combos.contains ("TIMEOFFSET")) {
+	    combos["TIMEOFFSET"] = (cpass.textures.size () > 2 && cpass.textures[2] != nullptr) ? 1 : 0;
+	}
+
+	std::string t0_path;
+	if (!pass_def.textures.empty () && !pass_def.textures[0].empty ()) {
+	    t0_path = pass_def.textures[0];
+	} else if (const auto dit = uniform_defaults.find ("g_Texture0"); dit != uniform_defaults.end ()) {
+	    t0_path = dit->second;
+	}
+
+	if (!t0_path.empty () && !t0_path.starts_with ("_rt_")) {
+	    std::optional<std::uint32_t> fmt;
+	    if (cached_data != nullptr) {
+		if (const auto it = cached_data->find (t0_path); it != cached_data->end ()) {
+		    fmt = it->second.format;
+		}
+	    }
+	    if (!fmt.has_value ()) {
+		auto tdata = load_texture_data (assets, t0_path);
+		if (tdata) {
+		    fmt = tdata->format;
+		}
+	    }
+	    if (fmt.has_value ()) {
+		if (*fmt == 8) {
+		    combos["TEX0FORMAT"] = 8;
+		} else if (*fmt == 9) {
+		    combos["TEX0FORMAT"] = 9;
+		}
+	    }
 	}
 
 	apply_uniform_values (cpass, uniform_mat_keys, uniform_types, uniform_defaults, pass_def.constant_values);
@@ -624,7 +791,13 @@ void ParticleSystemState::spawn_particle (ParticleInstance& p, const ParticleEmi
     p.lifetime = 1.0F * this->instance_override.lifetime;
     p.age = 0.0F;
     p.alive = true;
+    p.random_frame = -1;
+    if (this->animation_mode == "randomframe" && !this->frames.empty ()) {
+	std::uniform_int_distribution<int> dist (0, static_cast<int> (this->frames.size () - 1));
+	p.random_frame = dist (this->rng);
+    }
     p.oscillate_alpha = {};
+    p.oscillate_position = {};
 
     for (const auto& init : this->initializers) {
 	switch (init.type) {
@@ -657,7 +830,7 @@ void ParticleSystemState::spawn_particle (ParticleInstance& p, const ParticleEmi
 		p.velocity.x
 		    += random_range (this->rng, init.min_vec.x, init.max_vec.x) * this->instance_override.speed;
 		p.velocity.y
-		    += random_range (this->rng, init.min_vec.y, init.max_vec.y) * this->instance_override.speed;
+		    += -random_range (this->rng, init.min_vec.y, init.max_vec.y) * this->instance_override.speed;
 		p.velocity.z
 		    += random_range (this->rng, init.min_vec.z, init.max_vec.z) * this->instance_override.speed;
 		break;
@@ -744,7 +917,7 @@ void ParticleSystemState::update (float dt, float /*current_time*/) {
 		    p.position.z += p.velocity.z * dt;
 
 		    p.velocity.x += op.gravity.x * dt * this->instance_override.speed;
-		    p.velocity.y += op.gravity.y * dt * this->instance_override.speed;
+		    p.velocity.y += -op.gravity.y * dt * this->instance_override.speed;
 		    p.velocity.z += op.gravity.z * dt * this->instance_override.speed;
 
 		    {
@@ -802,11 +975,51 @@ void ParticleSystemState::update (float dt, float /*current_time*/) {
 		    break;
 		case OperatorType::oscillate_position:
 		    {
-			const float freq = op.frequency_min > 0.0F ? op.frequency_min : 5.0F;
-			const float scale_factor = op.scale_min > 0.0F ? op.scale_min : 1.0F;
-			const float offset_sin = std::sin (freq * p.age) * scale_factor;
-			p.position.x += offset_sin * op.mask.x * dt;
-			p.position.y += offset_sin * op.mask.y * dt;
+			if (!p.oscillate_position.initialized) {
+			    const float f_min = op.frequency_min;
+			    const float f_max = std::max (op.frequency_min, op.frequency_max);
+			    p.oscillate_position.frequency = {
+				random_range (this->rng, f_min, f_max),
+				random_range (this->rng, f_min, f_max),
+				random_range (this->rng, f_min, f_max),
+			    };
+			    const float s_min = op.scale_min;
+			    const float s_max = std::max (op.scale_min, op.scale_max);
+			    p.oscillate_position.scale = {
+				random_range (this->rng, s_min, s_max),
+				random_range (this->rng, s_min, s_max),
+				random_range (this->rng, s_min, s_max),
+			    };
+			    constexpr float two_pi = 6.2831853F;
+			    const float p_max = op.phase_max > op.phase_min ? op.phase_max : op.phase_min + two_pi;
+			    p.oscillate_position.phase = {
+				random_range (this->rng, op.phase_min, p_max),
+				random_range (this->rng, op.phase_min, p_max),
+				random_range (this->rng, op.phase_min, p_max),
+			    };
+			    p.oscillate_position.current_offset = {};
+			    p.oscillate_position.initialized = true;
+			}
+
+			// Subtract previous offset to prevent cumulative drift
+			p.position.x -= p.oscillate_position.current_offset.x;
+			p.position.y -= p.oscillate_position.current_offset.y;
+			p.position.z -= p.oscillate_position.current_offset.z;
+
+			const float speed_override = this->instance_override.speed;
+			const core::Vec3 new_offset {
+			    std::cos (p.oscillate_position.frequency.x * p.age + p.oscillate_position.phase.x)
+				* p.oscillate_position.scale.x * op.mask.x * speed_override,
+			    std::cos (p.oscillate_position.frequency.y * p.age + p.oscillate_position.phase.y)
+				* p.oscillate_position.scale.y * op.mask.y * speed_override,
+			    std::cos (p.oscillate_position.frequency.z * p.age + p.oscillate_position.phase.z)
+				* p.oscillate_position.scale.z * op.mask.z * speed_override,
+			};
+
+			p.oscillate_position.current_offset = new_offset;
+			p.position.x += new_offset.x;
+			p.position.y += new_offset.y;
+			p.position.z += new_offset.z;
 		    }
 		    break;
 		case OperatorType::unknown:
@@ -829,8 +1042,85 @@ void ParticleSystemState::prewarm (float seconds) {
     }
 }
 
-std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& scene, const AssetContainer& assets) {
+core::Rect ParticleSystemState::get_particle_uv (const ParticleInstance& p) const {
+    if (this->frames.empty ()) {
+	return { 0.0F, 0.0F, 1.0F, 1.0F };
+    }
+
+    const float tw = this->texture_width > 0 ? static_cast<float> (this->texture_width)
+					     : (this->texture ? static_cast<float> (this->texture->width ()) : 1.0F);
+    const float th = this->texture_height > 0 ? static_cast<float> (this->texture_height)
+					      : (this->texture ? static_cast<float> (this->texture->height ()) : 1.0F);
+
+    if (tw <= 0.0F || th <= 0.0F) {
+	return { 0.0F, 0.0F, 1.0F, 1.0F };
+    }
+
+    if (this->frames.size () == 1) {
+	const auto& frame = this->frames.front ();
+	return {
+	    frame.x / tw,
+	    frame.y / th,
+	    frame.width / tw,
+	    frame.height / th,
+	};
+    }
+
+    std::size_t frame_idx = 0;
+    const auto frame_count = this->frames.size ();
+    const float anim_speed = this->sequence_multiplier > 0.0F ? this->sequence_multiplier : 1.0F;
+
+    if (this->animation_mode == "randomframe") {
+	if (p.random_frame >= 0) {
+	    frame_idx = static_cast<std::size_t> (p.random_frame) % frame_count;
+	} else {
+	    frame_idx = 0;
+	}
+    } else if (this->animation_mode == "once") {
+	const float life_frac = p.lifetime > 0.0F ? std::clamp (p.age / p.lifetime, 0.0F, 1.0F) : 0.0F;
+	frame_idx = static_cast<std::size_t> (life_frac * static_cast<float> (frame_count) * anim_speed);
+	if (frame_idx >= frame_count) {
+	    frame_idx = frame_count - 1;
+	}
+    } else {
+	// "sequence" or looping
+	if (this->duration > 0.0F) {
+	    float time_in_cycle = std::fmod (p.age * anim_speed, this->duration);
+	    if (time_in_cycle < 0.0F) {
+		time_in_cycle += this->duration;
+	    }
+	    for (std::size_t f = 0; f < frame_count; ++f) {
+		time_in_cycle -= this->frames[f].frametime;
+		if (time_in_cycle <= 0.0F || f == frame_count - 1) {
+		    frame_idx = f;
+		    break;
+		}
+	    }
+	} else {
+	    const float life_frac = p.lifetime > 0.0F ? p.age / p.lifetime : 0.0F;
+	    float cycle_pos = std::fmod (
+		life_frac * static_cast<float> (frame_count) * anim_speed, static_cast<float> (frame_count)
+	    );
+	    if (cycle_pos < 0.0F) {
+		cycle_pos += static_cast<float> (frame_count);
+	    }
+	    frame_idx = std::min (static_cast<std::size_t> (cycle_pos), frame_count - 1);
+	}
+    }
+
+    const auto& frame = this->frames[frame_idx];
+    return {
+	frame.x / tw,
+	frame.y / th,
+	frame.width / tw,
+	frame.height / th,
+    };
+}
+
+std::expected<SceneRenderer, core::Error>
+SceneRenderer::build (const Scene& scene, const AssetContainer& assets, const SceneRendererOptions& options) {
     SceneRenderer result;
+    result.camera_ = scene.camera;
     result.scene_width_ = std::max (scene.camera.width, 1);
     result.scene_height_ = std::max (scene.camera.height, 1);
     result.clear_color_ = scene.clear_color;
@@ -930,7 +1220,7 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 		EffectInstance inst;
 
 		for (const auto& pass_def : eff.passes) {
-		    auto compiled = compile_effect_pass (assets, pass_def, load_extra_texture);
+		    auto compiled = compile_effect_pass (assets, pass_def, load_extra_texture, &result.texture_data_);
 		    if (compiled) {
 			inst.passes.push_back (std::move (*compiled));
 		    }
@@ -961,7 +1251,9 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    }
 
 	    if (data->is_video) {
-		auto player = VideoPlayer::create ();
+		VideoOptions video_options;
+		video_options.hardware_decode = options.hardware_decode && !is_software_gl ();
+		auto player = VideoPlayer::create (video_options);
 
 		if (!player) {
 		    core::log_warn ("cannot create video for '", image.texture_path, "': ", player.error ().message);
@@ -1067,9 +1359,8 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 
 	center = scene_to_world (center, result.scene_width_, result.scene_height_);
 
-	// Wallpaper Engine stores angles in radians and applies them clockwise on screen.
-	// In this centered y-up world, a clockwise rotation is negative.
-	const float angle = -image.angles.z;
+	// Wallpaper Engine stores angles in radians.
+	const float angle = image.angles.z;
 	const float half_width = scaled_width * 0.5F;
 	const float half_height = scaled_height * 0.5F;
 
@@ -1110,6 +1401,9 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    layer.corners[index] = center + rotated;
 	}
 
+	layer.base_corners = layer.corners;
+	layer.parallax_depth = image.parallax_depth;
+
 	if (metadata != result.texture_data_.end () && !metadata->second.frames.empty ()) {
 	    layer.frames = metadata->second.frames;
 	    layer.duration = metadata->second.duration;
@@ -1131,6 +1425,59 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    // records the canvas it was cropped from. Sampling the whole uploaded
 	    // texture is therefore what reproduces Wallpaper Engine's UVs.
 	    layer.uv = core::Rect { 0.0F, 0.0F, 1.0F, 1.0F };
+	}
+
+	for (const auto& eff : image.effects) {
+	    if (!eff.visible) {
+		continue;
+	    }
+
+	    for (const auto& fbo_def : eff.fbos) {
+		if (!result.fbos_.contains (fbo_def.name)) {
+		    const int scale = fbo_def.scale > 0 ? fbo_def.scale : 1;
+		    const int fw = std::max (1, static_cast<int> (width) / scale);
+		    const int fh = std::max (1, static_cast<int> (height) / scale);
+		    auto fbo_named = gfx::Framebuffer::create (fw, fh, gfx::FramebufferFormat::rgba8);
+
+		    if (fbo_named) {
+			result.fbos_.emplace (fbo_def.name, std::move (*fbo_named));
+		    } else {
+			core::log_warn ("cannot create FBO '", fbo_def.name, "': ", fbo_named.error ().message);
+		    }
+		}
+	    }
+
+	    EffectInstance inst;
+
+	    for (const auto& pass_def : eff.passes) {
+		auto compiled = compile_effect_pass (assets, pass_def, load_extra_texture, &result.texture_data_);
+		if (compiled) {
+		    inst.passes.push_back (std::move (*compiled));
+		}
+	    }
+
+	    if (!inst.passes.empty ()) {
+		core::log_info ("compiled ", inst.passes.size (), " passes for layer effect '", eff.file, "'");
+		layer.effects.push_back (std::move (inst));
+	    }
+	}
+
+	if (!layer.effects.empty ()) {
+	    result.uses_offscreen_ = true;
+	    const int lw = metadata != result.texture_data_.end () && metadata->second.width > 0
+		? metadata->second.width
+		: std::max (1, static_cast<int> (width));
+	    const int lh = metadata != result.texture_data_.end () && metadata->second.height > 0
+		? metadata->second.height
+		: std::max (1, static_cast<int> (height));
+	    auto fa = gfx::Framebuffer::create (lw, lh, gfx::FramebufferFormat::rgba8);
+	    auto fb = gfx::Framebuffer::create (lw, lh, gfx::FramebufferFormat::rgba8);
+	    if (fa && fb) {
+		layer.fbo_a = std::move (*fa);
+		layer.fbo_b = std::move (*fb);
+	    } else {
+		core::log_warn ("cannot create layer FBOs for '", image.name, "'");
+	    }
 	}
 
 	result.layers_.push_back (std::move (layer));
@@ -1165,6 +1512,8 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    std::clamp (get_number (root, "maxcount", 1000.0F) * override_inst.count, 1.0F, 25000.0F)
 	);
 	ps.start_time = get_number (root, "starttime", 0.0F);
+	ps.animation_mode = get_text (root, "animationmode", "sequence");
+	ps.sequence_multiplier = get_number (root, "sequencemultiplier", 1.0F);
 
 	const std::string mat_path = get_text (root, "material");
 	if (!mat_path.empty ()) {
@@ -1179,9 +1528,7 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 			    ps.is_refract = first["combos"]["REFRACT"].get<int> () != 0;
 			}
 		    }
-		    if (ps.is_refract) {
-			ps.blend = gfx::BlendMode::normal;
-		    }
+
 		    if (first.contains ("textures") && first["textures"].is_array () && !first["textures"].empty ()) {
 			if (first["textures"][0].is_string ()) {
 			    const std::string tpath = first["textures"][0].get<std::string> ();
@@ -1200,6 +1547,16 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 					ps.texture = std::make_shared<gfx::Texture> (std::move (*up));
 					result.textures_.emplace (tpath, ps.texture);
 				    }
+				}
+				if (const auto meta_it = result.texture_data_.find (tpath);
+				    meta_it != result.texture_data_.end ()) {
+				    ps.frames = meta_it->second.frames;
+				    ps.duration = meta_it->second.duration;
+				    ps.texture_width = meta_it->second.texture_width > 0 ? meta_it->second.texture_width
+											 : meta_it->second.width;
+				    ps.texture_height = meta_it->second.texture_height > 0
+					? meta_it->second.texture_height
+					: meta_it->second.height;
 				}
 			    }
 			}
@@ -1406,7 +1763,7 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	    ep.target = bdef.target;
 	    ep.binds = bdef.binds;
 
-	    auto compiled = compile_effect_pass (assets, ep, load_extra_texture);
+	    auto compiled = compile_effect_pass (assets, ep, load_extra_texture, &result.texture_data_);
 
 	    if (compiled) {
 		if (std::string_view (bdef.shader) == "downsample_quarter_bloom") {
@@ -1502,6 +1859,63 @@ std::expected<SceneRenderer, core::Error> SceneRenderer::build (const Scene& sce
 	result.blit_shader_ = std::move (*blit_sh);
     }
 
+    if (options.audio_enabled && !scene.sounds.empty ()) {
+	auto audio = std::make_unique<SceneAudio> ();
+	audio->mpv = mpv_create ();
+	if (audio->mpv != nullptr) {
+	    mpv_set_option_string (audio->mpv, "vo", "null");
+	    mpv_set_option_string (audio->mpv, "video", "no");
+	    mpv_set_option_string (audio->mpv, "audio", "auto");
+	    mpv_set_option_string (audio->mpv, "terminal", "no");
+	    mpv_set_option_string (audio->mpv, "input-default-bindings", "no");
+	    mpv_set_option_string (audio->mpv, "osc", "no");
+	    mpv_set_option_string (audio->mpv, "loop-playlist", "inf");
+	    const std::string volume_str
+		= std::to_string (static_cast<int> (std::clamp (options.volume * 100.0F, 0.0F, 100.0F)));
+	    mpv_set_option_string (audio->mpv, "volume", volume_str.c_str ());
+
+	    if (mpv_initialize (audio->mpv) >= 0) {
+		bool first = true;
+		for (const auto& sound : scene.sounds) {
+		    for (const auto& file : sound.files) {
+			std::filesystem::path resolved_path;
+			std::error_code ec;
+			const auto direct = assets.root () / file;
+			if (std::filesystem::is_regular_file (direct, ec)) {
+			    resolved_path = std::filesystem::absolute (direct);
+			} else if (auto data = assets.read (file); data && !data->empty ()) {
+			    const auto temp = std::filesystem::temp_directory_path ()
+				/ ("we-audio-" + std::to_string (reinterpret_cast<std::uintptr_t> (audio.get ())) + "-"
+				   + std::to_string (audio->temp_files.size ()) + ".dat");
+			    std::ofstream stream (temp, std::ios::binary | std::ios::trunc);
+			    if (stream) {
+				stream.write (
+				    reinterpret_cast<const char*> (data->data ()),
+				    static_cast<std::streamsize> (data->size ())
+				);
+				stream.close ();
+				audio->temp_files.push_back (temp);
+				resolved_path = temp;
+			    }
+			}
+
+			if (!resolved_path.empty ()) {
+			    const std::string path_str = resolved_path.string ();
+			    const char* mode = first ? "replace" : "append";
+			    const char* cmd[] = { "loadfile", path_str.c_str (), mode, nullptr };
+			    mpv_command (audio->mpv, cmd);
+			    first = false;
+			}
+		    }
+		}
+		if (!first) {
+		    mpv_set_property_string (audio->mpv, "pause", "no");
+		    result.audio_ = std::move (audio);
+		}
+	    }
+	}
+    }
+
     const auto image_layer_count = std::count_if (result.layers_.begin (), result.layers_.end (), [] (const Layer& l) {
 	return !l.is_particle && !l.is_effect;
     });
@@ -1536,6 +1950,48 @@ void SceneRenderer::report_video_swap () {
     }
 }
 
+void SceneRenderer::update_input (std::optional<core::Vec2> normalized_cursor, float dt) {
+    if (!this->camera_.parallax_enabled) {
+	this->parallax_displacement_ = { 0.0F, 0.0F };
+	return;
+    }
+
+    core::Vec2 target { 0.0F, 0.0F };
+    if (normalized_cursor.has_value ()) {
+	const float cx = normalized_cursor->x - 0.5F;
+	const float cy = 0.5F - normalized_cursor->y;
+	target = core::Vec2 {
+	    cx * this->camera_.parallax_mouse_influence,
+	    cy * this->camera_.parallax_mouse_influence,
+	};
+    }
+
+    float factor = 1.0F;
+    if (this->camera_.parallax_delay > 0.0F && dt > 0.0F) {
+	factor = std::clamp (1.0F - std::pow (this->camera_.parallax_delay, dt * 60.0F), 0.0F, 1.0F);
+    }
+
+    this->parallax_displacement_.x += (target.x - this->parallax_displacement_.x) * factor;
+    this->parallax_displacement_.y += (target.y - this->parallax_displacement_.y) * factor;
+
+    const float ref_size = static_cast<float> (this->scene_width_);
+
+    for (auto& layer : this->layers_) {
+	if (layer.is_effect || layer.is_particle) {
+	    continue;
+	}
+	const float offset_x
+	    = (layer.parallax_depth.x + this->camera_.parallax_amount) * this->parallax_displacement_.x * ref_size;
+	const float offset_y
+	    = (layer.parallax_depth.y + this->camera_.parallax_amount) * this->parallax_displacement_.y * ref_size;
+
+	for (std::size_t i = 0; i < layer.corners.size (); ++i) {
+	    layer.corners[i].x = layer.base_corners[i].x + offset_x;
+	    layer.corners[i].y = layer.base_corners[i].y + offset_y;
+	}
+    }
+}
+
 void SceneRenderer::render_effect_pass (
     const CompiledPass& pass, gfx::Framebuffer*& current_composite, gfx::Framebuffer*& next_composite,
     float current_time
@@ -1550,8 +2006,13 @@ void SceneRenderer::render_effect_pass (
 
     if (pass.target.empty ()) {
 	target_fbo = next_composite;
-	target_w = this->scene_width_;
-	target_h = this->scene_height_;
+	if (target_fbo != nullptr) {
+	    target_w = target_fbo->width ();
+	    target_h = target_fbo->height ();
+	} else {
+	    target_w = this->scene_width_;
+	    target_h = this->scene_height_;
+	}
     } else {
 	const auto it = this->fbos_.find (pass.target);
 	if (it != this->fbos_.end ()) {
@@ -1562,6 +2023,17 @@ void SceneRenderer::render_effect_pass (
 	    core::log_warn ("target FBO '", pass.target, "' not found");
 	    return;
 	}
+    }
+
+    if (pass.target.empty () && current_composite != nullptr && next_composite != nullptr
+	&& current_composite != next_composite
+	&& (pass.blend == gfx::BlendMode::additive || pass.blend == gfx::BlendMode::translucent)) {
+	glBindFramebuffer (GL_READ_FRAMEBUFFER, current_composite->id ());
+	glBindFramebuffer (GL_DRAW_FRAMEBUFFER, next_composite->id ());
+	glBlitFramebuffer (
+	    0, 0, current_composite->width (), current_composite->height (), 0, 0, next_composite->width (),
+	    next_composite->height (), GL_COLOR_BUFFER_BIT, GL_NEAREST
+	);
     }
 
     target_fbo->bind ();
@@ -1587,68 +2059,72 @@ void SceneRenderer::render_effect_pass (
     );
     pass.shader.set_float ("g_Time", current_time);
 
-    if (pass.binds.empty ()) {
-	GLuint tex0 = current_composite->color_texture ();
-	int tex0_w = current_composite->width ();
-	int tex0_h = current_composite->height ();
+    struct BoundTexture {
+	GLuint id = 0;
+	int width = 0;
+	int height = 0;
+    };
+    std::array<std::optional<BoundTexture>, 8> bound_textures;
 
-	if (!pass.textures.empty () && pass.textures[0] != nullptr && pass.textures[0]->valid ()) {
-	    tex0 = pass.textures[0]->id ();
-	    tex0_w = pass.textures[0]->width ();
-	    tex0_h = pass.textures[0]->height ();
+    for (std::size_t index = 0; index < pass.textures.size () && index < 8; ++index) {
+	if (pass.textures[index] && pass.textures[index]->valid ()) {
+	    bound_textures[index] = BoundTexture {
+		pass.textures[index]->id (),
+		pass.textures[index]->width (),
+		pass.textures[index]->height (),
+	    };
+	}
+    }
+
+    for (const auto& bind : pass.binds) {
+	if (bind.index < 0 || bind.index >= 8) {
+	    continue;
 	}
 
-	glActiveTexture (GL_TEXTURE0);
-	glBindTexture (GL_TEXTURE_2D, tex0);
-	pass.shader.set_int ("g_Texture0", 0);
-	pass.shader.set_vec4 (
-	    "g_Texture0Resolution",
-	    core::Vec4 { static_cast<float> (tex0_w), static_cast<float> (tex0_h), static_cast<float> (tex0_w),
-			 static_cast<float> (tex0_h) }
-	);
+	GLuint tex_id = 0;
+	int tex_w = this->scene_width_;
+	int tex_h = this->scene_height_;
 
-	for (std::size_t index = 1; index < pass.textures.size (); ++index) {
-	    if (pass.textures[index] && pass.textures[index]->valid ()) {
-		glActiveTexture (static_cast<GLenum> (GL_TEXTURE0 + index));
-		glBindTexture (GL_TEXTURE_2D, pass.textures[index]->id ());
-		const std::string sidx = std::to_string (index);
-		pass.shader.set_int ("g_Texture" + sidx, static_cast<int> (index));
-		pass.shader.set_vec4 (
-		    "g_Texture" + sidx + "Resolution",
-		    core::Vec4 { static_cast<float> (pass.textures[index]->width ()),
-				 static_cast<float> (pass.textures[index]->height ()),
-				 static_cast<float> (pass.textures[index]->width ()),
-				 static_cast<float> (pass.textures[index]->height ()) }
-		);
-	    }
-	}
-    } else {
-	for (const auto& bind : pass.binds) {
-	    GLuint tex_id = 0;
-	    int tex_w = this->scene_width_;
-	    int tex_h = this->scene_height_;
-
-	    if (bind.name == "previous" || bind.name == "_rt_FullFrameBuffer") {
+	if (bind.name == "previous" || bind.name == "_rt_FullFrameBuffer") {
+	    if (current_composite != nullptr) {
 		tex_id = current_composite->color_texture ();
 		tex_w = current_composite->width ();
 		tex_h = current_composite->height ();
-	    } else if (const auto fit = this->fbos_.find (bind.name); fit != this->fbos_.end ()) {
-		tex_id = fit->second.color_texture ();
-		tex_w = fit->second.width ();
-		tex_h = fit->second.height ();
 	    }
+	} else if (const auto fit = this->fbos_.find (bind.name); fit != this->fbos_.end ()) {
+	    tex_id = fit->second.color_texture ();
+	    tex_w = fit->second.width ();
+	    tex_h = fit->second.height ();
+	}
 
-	    if (tex_id != 0) {
-		glActiveTexture (static_cast<GLenum> (GL_TEXTURE0 + bind.index));
-		glBindTexture (GL_TEXTURE_2D, tex_id);
-		const std::string sidx = std::to_string (bind.index);
-		pass.shader.set_int ("g_Texture" + sidx, bind.index);
-		pass.shader.set_vec4 (
-		    "g_Texture" + sidx + "Resolution",
-		    core::Vec4 { static_cast<float> (tex_w), static_cast<float> (tex_h), static_cast<float> (tex_w),
-				 static_cast<float> (tex_h) }
-		);
+	if (tex_id != 0) {
+	    bound_textures[static_cast<std::size_t> (bind.index)] = BoundTexture { tex_id, tex_w, tex_h };
+	}
+    }
+
+    if (!bound_textures[0].has_value () && current_composite != nullptr) {
+	bound_textures[0] = BoundTexture {
+	    current_composite->color_texture (),
+	    current_composite->width (),
+	    current_composite->height (),
+	};
+    }
+
+    for (std::size_t index = 0; index < 8; ++index) {
+	if (bound_textures[index].has_value ()) {
+	    glActiveTexture (static_cast<GLenum> (GL_TEXTURE0 + index));
+	    glBindTexture (GL_TEXTURE_2D, bound_textures[index]->id);
+	    const std::string sidx = std::to_string (index);
+	    pass.shader.set_int ("g_Texture" + sidx, static_cast<int> (index));
+
+	    core::Vec4 res { static_cast<float> (bound_textures[index]->width),
+			     static_cast<float> (bound_textures[index]->height),
+			     static_cast<float> (bound_textures[index]->width),
+			     static_cast<float> (bound_textures[index]->height) };
+	    if (index < pass.texture_resolutions.size () && pass.texture_resolutions[index].x > 0.0F) {
+		res = pass.texture_resolutions[index];
 	    }
+	    pass.shader.set_vec4 ("g_Texture" + sidx + "Resolution", res);
 	}
     }
 
@@ -1694,10 +2170,8 @@ void SceneRenderer::render_particles (
 	}
 
 	float alpha = std::clamp (p.alpha, 0.0F, 1.0F);
-	if (ps.is_refract) {
-	    alpha = std::clamp (alpha * 0.08F, 0.0F, 1.0F);
-	}
 	const core::Color tint { p.color.x, p.color.y, p.color.z, alpha };
+	const core::Rect uv = ps.get_particle_uv (p);
 
 	std::array<core::Vec2, 4> corners;
 
@@ -1724,7 +2198,7 @@ void SceneRenderer::render_particles (
 		corners[3] = { p.position.x + dir_x * half_l - perp_x * half_w,
 			       p.position.y - dir_y * half_l - perp_y * half_w };
 
-		renderer.draw_quad (*ps.texture, corners, { 0.0F, 0.0F, 1.0F, 1.0F }, tint, ps.blend, p.position.z);
+		renderer.draw_quad (*ps.texture, corners, uv, tint, ps.blend, p.position.z);
 		continue;
 	    }
 	}
@@ -1749,8 +2223,36 @@ void SceneRenderer::render_particles (
 	    corners[3] = { p.position.x - half_size, p.position.y - half_size };
 	}
 
-	renderer.draw_quad (*ps.texture, corners, { 0.0F, 0.0F, 1.0F, 1.0F }, tint, ps.blend, p.position.z);
+	renderer.draw_quad (*ps.texture, corners, uv, tint, ps.blend, p.position.z);
     }
+}
+
+core::Rect SceneRenderer::layer_uv (std::size_t index, float elapsed) const {
+    return this->calculate_layer_uv (this->layers_.at (index), elapsed);
+}
+
+core::Rect SceneRenderer::calculate_layer_uv (const Layer& layer, float elapsed) const {
+    if (layer.frames.size () > 1 && layer.duration > 0.0F) {
+	float time_in_cycle = std::fmod (elapsed, layer.duration);
+	if (time_in_cycle < 0.0F) {
+	    time_in_cycle += layer.duration;
+	}
+
+	for (const auto& frame : layer.frames) {
+	    time_in_cycle -= frame.frametime;
+
+	    if (time_in_cycle <= 0.0F) {
+		return core::Rect {
+		    frame.x / static_cast<float> (layer.texture_width),
+		    frame.y / static_cast<float> (layer.texture_height),
+		    frame.width / static_cast<float> (layer.texture_width),
+		    frame.height / static_cast<float> (layer.texture_height),
+		};
+	    }
+	}
+    }
+
+    return layer.uv;
 }
 
 void SceneRenderer::render (gfx::Renderer& renderer) const {
@@ -1785,6 +2287,8 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 
 	    const bool reflective
 		= layer.reflective && layer.normal_texture != nullptr && layer.normal_texture->valid ();
+
+	    const core::Rect current_uv = this->calculate_layer_uv (layer, elapsed);
 
 	    if (layer.lighting || reflective) {
 		if (reflective) {
@@ -1825,7 +2329,7 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 		reflection_options.bitangent = layer.bitangent;
 
 		renderer.draw_quad_material (
-		    *layer.texture, layer.corners, layer.uv, layer.tint, layer.blend, layer.z,
+		    *layer.texture, layer.corners, current_uv, layer.tint, layer.blend, layer.z,
 		    layer.lighting ? &lighting_options : nullptr, reflective ? &reflection_options : nullptr
 		);
 
@@ -1833,7 +2337,7 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 		    frame_captured = false;
 		}
 	    } else {
-		renderer.draw_quad (*layer.texture, layer.corners, layer.uv, layer.tint, layer.blend, layer.z);
+		renderer.draw_quad (*layer.texture, layer.corners, current_uv, layer.tint, layer.blend, layer.z);
 		frame_captured = false;
 	    }
 	}
@@ -1887,24 +2391,43 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 
 	const bool reflective = layer.reflective && layer.normal_texture != nullptr && layer.normal_texture->valid ();
 
-	core::Rect current_uv = layer.uv;
+	const core::Rect current_uv = this->calculate_layer_uv (layer, elapsed);
 
-	if (layer.frames.size () > 1 && layer.duration > 0.0F) {
-	    float time_in_cycle = std::fmod (elapsed, layer.duration);
+	const gfx::Texture* quad_texture = layer.texture.get ();
 
-	    for (const auto& frame : layer.frames) {
-		time_in_cycle -= frame.frametime;
+	if (!layer.effects.empty () && layer.fbo_a.has_value () && layer.fbo_b.has_value ()) {
+	    renderer.flush ();
 
-		if (time_in_cycle <= 0.0F) {
-		    current_uv = core::Rect {
-			frame.x / static_cast<float> (layer.texture_width),
-			frame.y / static_cast<float> (layer.texture_height),
-			frame.width / static_cast<float> (layer.texture_width),
-			frame.height / static_cast<float> (layer.texture_height),
-		    };
-		    break;
+	    layer.fbo_a->bind ();
+	    glViewport (0, 0, layer.fbo_a->width (), layer.fbo_a->height ());
+	    glDisable (GL_DEPTH_TEST);
+	    glDisable (GL_BLEND);
+
+	    this->blit_shader_.use ();
+	    this->blit_shader_.set_int ("u_Texture", 0);
+	    glActiveTexture (GL_TEXTURE0);
+	    glBindTexture (GL_TEXTURE_2D, layer.texture->id ());
+	    this->quad_vao_.bind ();
+	    glDrawArrays (GL_TRIANGLES, 0, 6);
+	    gfx::GlVertexArray::unbind ();
+	    glBindTexture (GL_TEXTURE_2D, 0);
+
+	    gfx::Framebuffer* current_layer_fbo = &*layer.fbo_a;
+	    gfx::Framebuffer* next_layer_fbo = &*layer.fbo_b;
+
+	    for (const auto& eff : layer.effects) {
+		for (const auto& pass : eff.passes) {
+		    this->render_effect_pass (pass, current_layer_fbo, next_layer_fbo, elapsed);
 		}
 	    }
+
+	    current_composite->bind ();
+	    glViewport (0, 0, this->scene_width_, this->scene_height_);
+	    renderer.set_projection (this->view_projection_);
+	    renderer.set_lighting (this->lights_, this->ambient_);
+
+	    layer.effect_view = current_layer_fbo->view ();
+	    quad_texture = &layer.effect_view;
 	}
 
 	if (layer.lighting || reflective) {
@@ -1944,7 +2467,7 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 	    reflection_options.bitangent = layer.bitangent;
 
 	    renderer.draw_quad_material (
-		*layer.texture, layer.corners, current_uv, layer.tint, layer.blend, layer.z,
+		*quad_texture, layer.corners, current_uv, layer.tint, layer.blend, layer.z,
 		layer.lighting ? &lighting_options : nullptr, reflective ? &reflection_options : nullptr
 	    );
 
@@ -1952,8 +2475,12 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 		frame_captured = false;
 	    }
 	} else {
-	    renderer.draw_quad (*layer.texture, layer.corners, current_uv, layer.tint, layer.blend, layer.z);
+	    renderer.draw_quad (*quad_texture, layer.corners, current_uv, layer.tint, layer.blend, layer.z);
 	    frame_captured = false;
+	}
+
+	if (!layer.effects.empty ()) {
+	    renderer.flush ();
 	}
     }
 

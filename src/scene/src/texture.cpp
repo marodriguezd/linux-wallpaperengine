@@ -27,7 +27,9 @@ namespace {
     constexpr std::uint32_t format_rg88 = 8;
     constexpr std::uint32_t format_r8 = 9;
     constexpr std::uint32_t format_bc7 = 12;
+    constexpr std::uint32_t format_free_image_jpeg = 2;
     constexpr std::uint32_t format_free_image_png = 13;
+    constexpr std::uint32_t free_image_unknown = 0xFFFFFFFFU;
 
     constexpr std::uint32_t texture_flag_alpha_channel_priority = 524288U; // 0x80000
 
@@ -353,7 +355,7 @@ std::expected<TextureData, core::Error> decode_texture (std::span<const std::byt
 
     const std::uint32_t image_count = cursor.u32 ();
 
-    std::uint32_t free_image_format = 0;
+    std::uint32_t free_image_format = free_image_unknown;
 
     if (container_version >= 3) {
 	free_image_format = cursor.u32 ();
@@ -477,8 +479,12 @@ std::expected<TextureData, core::Error> decode_texture (std::span<const std::byt
 	return texture;
     }
 
-    // Free-image format 13 (FIF_PNG) stores the mipmap as an embedded PNG.
-    if (free_image_format == format_free_image_png) {
+    const bool is_jpeg = span.size () >= 3 && span[0] == std::byte { 0xFF } && span[1] == std::byte { 0xD8 }
+	&& span[2] == std::byte { 0xFF };
+    const bool is_png = span.size () >= 8 && std::memcmp (span.data (), "\x89PNG\r\n\x1a\n", 8) == 0;
+    const bool is_encoded = (free_image_format != 0 && free_image_format != free_image_unknown) || is_jpeg || is_png;
+
+    if (is_encoded) {
 	auto image = decode_image (span);
 
 	if (!image) {
@@ -488,21 +494,21 @@ std::expected<TextureData, core::Error> decode_texture (std::span<const std::byt
 	texture.width = image->width;
 	texture.height = image->height;
 	texture.rgba = std::move (image->rgba);
-	ensure_rgba (texture);
-	return texture;
+    } else {
+	auto rgba = decode_uncompressed (span, texture.width, texture.height, texture.format, texture.flags);
+
+	if (!rgba && rgba.error ().code == core::ErrorCode::unsupported) {
+	    rgba = decode_blocks (span, texture.width, texture.height, texture.format);
+	}
+
+	if (!rgba) {
+	    return std::unexpected (std::move (rgba.error ()));
+	}
+
+	texture.rgba = std::move (*rgba);
     }
 
-    auto rgba = decode_uncompressed (span, texture.width, texture.height, texture.format, texture.flags);
-
-    if (!rgba && rgba.error ().code == core::ErrorCode::unsupported) {
-	rgba = decode_blocks (span, texture.width, texture.height, texture.format);
-    }
-
-    if (!rgba) {
-	return std::unexpected (std::move (rgba.error ()));
-    }
-
-    texture.rgba = std::move (*rgba);
+    ensure_rgba (texture);
 
     // Optional sprite-sheet / GIF animation metadata. Playback of the frames is
     // handled by the scene layer; only the timing is needed here.

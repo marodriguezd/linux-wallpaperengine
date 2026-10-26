@@ -126,10 +126,6 @@ GLint Shader::uniform (std::string_view name) const {
     const GLint location = glGetUniformLocation (this->program_, key.c_str ());
     this->uniforms_.emplace (key, location);
 
-    if (location < 0) {
-	core::log_debug ("shader uniform not found: ", key);
-    }
-
     return location;
 }
 

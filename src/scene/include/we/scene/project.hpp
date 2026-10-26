@@ -19,6 +19,7 @@ struct Project {
     std::string title;
     std::string file;
     std::string workshop_id;
+    std::string preview;
     WallpaperType type = WallpaperType::unknown;
 };
 
