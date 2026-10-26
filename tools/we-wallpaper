@@ -15,6 +15,8 @@ ASSETS_DIR="${WE_ASSETS_DIR:-$HOME/.local/share/Steam/steamapps/common/wallpaper
 # feh estático; /opt/fork es el build verificado del fork.
 if [ -n "${WE_ENGINE:-}" ]; then
     ENGINE="$WE_ENGINE"
+elif command -v we >/dev/null 2>&1; then
+    ENGINE="we"
 elif [ -x /opt/fork/linux-wallpaperengine ]; then
     ENGINE=/opt/fork/linux-wallpaperengine
 else
@@ -165,10 +167,7 @@ ensure_cache() {
 	&& python3 -c "import json; d=json.load(open('$CACHE_FILE')); assert d.get('version')==1 and isinstance(d.get('items'),list)" 2>/dev/null; then
 	return 0
     fi
-    if engine_supports_library && "$ENGINE" --list-library --refresh >/dev/null 2>&1 \
-	&& [ -s "$CACHE_FILE" ]; then
-	return 0
-    fi
+    refresh_library && return 0
     return 1
 }
 
@@ -723,10 +722,19 @@ restore_screens() {
 }
 
 refresh_library() {
-    if engine_supports_library; then
+    mkdir -p "$(dirname "$CACHE_FILE")"
+    if "$ENGINE" list --json >/dev/null 2>&1; then
+	python3 -c "
+import json, subprocess
+raw = json.loads(subprocess.check_output(['$ENGINE', 'list', '--json']))
+cache = {'version': 1, 'items': raw}
+with open('$CACHE_FILE', 'w') as f:
+    json.dump(cache, f, indent=1)
+"
+    elif engine_supports_library; then
 	"$ENGINE" --list-library --refresh
     else
-	echo "Engine sin --list-library: instala el fork (fase B) para regenerar la caché"
+	echo "Engine sin list --json: no se puede regenerar la caché"
 	return 1
     fi
 }

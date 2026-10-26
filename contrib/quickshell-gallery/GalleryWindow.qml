@@ -241,7 +241,6 @@ FloatingWindow {
                 ShellButton {
                     visible: root.galleryModel.mode === "explore"
                     label: "Actualizar"
-                    icon: "view-refresh-symbolic"
                     onActivated: root.galleryModel.searchExplore()
                 }
             }
@@ -268,7 +267,6 @@ FloatingWindow {
 
                 ShellButton {
                     label: "Favoritos (" + root.galleryModel.typeCount("fav") + ")"
-                    icon: "emblem-favorite-symbolic"
                     primary: root.galleryModel.showFavorites
                     onActivated: root.galleryModel.toggleFavorites()
                 }
@@ -1088,7 +1086,6 @@ FloatingWindow {
                                 return "Instalar fondo";
                             }
                             primary: root.galleryModel.installedLocalId(modelData.ref) !== ""
-                            icon: root.galleryModel.installedLocalId(modelData.ref) !== "" ? "emblem-ok-symbolic" : "folder-download-symbolic"
                             onActivated: root.galleryModel.installOrApply(modelData)
                         }
                     }
@@ -1157,7 +1154,6 @@ FloatingWindow {
                     return true;
                 }
                 label: "Cargar más resultados"
-                icon: "go-down-symbolic"
                 onActivated: {
                     if (root.galleryModel.exploreSource === "bing") {
                         const q = root.galleryModel.exploreQuery;
@@ -1218,7 +1214,6 @@ FloatingWindow {
 
                         ShellButton {
                             label: "Eliminar"
-                            icon: "user-trash-symbolic"
                             danger: true
                             visible: root.galleryModel.isStoreItem(root.galleryModel.selectedId)
                             onActivated: {
