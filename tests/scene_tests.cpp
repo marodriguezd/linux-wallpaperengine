@@ -2666,3 +2666,248 @@ TEST (scene_image_layer_with_effect_modifies_pixel) {
     CHECK (pixel[1] > 200);
     CHECK (pixel[2] > 200);
 }
+
+namespace {
+
+void append_u16 (std::vector<std::byte>& output, std::uint16_t value) {
+    output.push_back (static_cast<std::byte> (value & 0xFFU));
+    output.push_back (static_cast<std::byte> ((value >> 8) & 0xFFU));
+}
+
+[[nodiscard]] std::vector<std::byte> make_mdlv_mesh (
+    std::string_view magic, std::size_t vertex_stride, std::size_t uv_offset, std::span<const core::Vec3> positions,
+    std::span<const core::Vec2> uvs, std::span<const std::uint16_t> indices
+) {
+    std::vector<std::byte> data;
+    for (char c : magic) {
+	data.push_back (static_cast<std::byte> (c));
+    }
+    append_u32 (data, 0); // dummy dword at offset + 0
+    const std::uint32_t vertex_bytes = static_cast<std::uint32_t> (positions.size () * vertex_stride);
+    append_u32 (data, vertex_bytes); // candidateVertexBytes at offset + 4
+
+    for (std::size_t i = 0; i < positions.size (); ++i) {
+	std::vector<std::byte> vertex (vertex_stride, std::byte { 0 });
+	const float x = positions[i].x;
+	const float y = positions[i].y;
+	const float z = positions[i].z;
+	std::memcpy (vertex.data () + 0, &x, sizeof (x));
+	std::memcpy (vertex.data () + 4, &y, sizeof (y));
+	std::memcpy (vertex.data () + 8, &z, sizeof (z));
+	const float u = uvs[i].x;
+	const float v = uvs[i].y;
+	std::memcpy (vertex.data () + uv_offset, &u, sizeof (u));
+	std::memcpy (vertex.data () + uv_offset + 4, &v, sizeof (v));
+	data.insert (data.end (), vertex.begin (), vertex.end ());
+    }
+
+    const std::uint32_t index_bytes = static_cast<std::uint32_t> (indices.size () * sizeof (std::uint16_t));
+    append_u32 (data, index_bytes);
+    for (std::uint16_t idx : indices) {
+	append_u16 (data, idx);
+    }
+
+    append_raw (data, "MDLS");
+    append_u32 (data, 0);
+
+    return data;
+}
+
+} // namespace
+
+TEST (scene_puppet_mesh_parse_mdlv0021_valid) {
+    const std::array<core::Vec3, 4> positions = { {
+	{ -50.0F, 50.0F, 1.0F },
+	{ 50.0F, 50.0F, 2.0F },
+	{ 50.0F, -50.0F, 3.0F },
+	{ -50.0F, -50.0F, 4.0F },
+    } };
+    const std::array<core::Vec2, 4> uvs = { {
+	{ 0.0F, 0.0F },
+	{ 1.0F, 0.0F },
+	{ 1.0F, 1.0F },
+	{ 0.0F, 1.0F },
+    } };
+    const std::array<std::uint16_t, 6> indices = { 0, 1, 2, 0, 2, 3 };
+
+    const auto data = make_mdlv_mesh ("MDLV0021", 80, 72, positions, uvs, indices);
+    auto mesh = scene::parse_puppet_mesh (data);
+    CHECK (mesh.has_value ());
+    CHECK_EQ (mesh->positions.size (), 4U);
+    CHECK_EQ (mesh->uvs.size (), 4U);
+    CHECK_EQ (mesh->indices.size (), 6U);
+    CHECK_EQ (mesh->positions[0].x, -50.0F);
+    CHECK_EQ (mesh->positions[0].y, 50.0F);
+    CHECK_EQ (mesh->positions[0].z, 1.0F);
+    CHECK_EQ (mesh->uvs[1].x, 1.0F);
+    CHECK_EQ (mesh->uvs[1].y, 0.0F);
+    CHECK_EQ (mesh->indices[0], 0);
+    CHECK_EQ (mesh->indices[1], 1);
+    CHECK_EQ (mesh->indices[2], 2);
+    CHECK_EQ (mesh->indices[5], 3);
+}
+
+TEST (scene_puppet_mesh_parse_mdlv0023_valid) {
+    const std::array<core::Vec3, 3> positions = { {
+	{ 0.0F, 10.0F, 0.0F },
+	{ 10.0F, -10.0F, 0.0F },
+	{ -10.0F, -10.0F, 0.0F },
+    } };
+    const std::array<core::Vec2, 3> uvs = { {
+	{ 0.5F, 1.0F },
+	{ 1.0F, 0.0F },
+	{ 0.0F, 0.0F },
+    } };
+    const std::array<std::uint16_t, 3> indices = { 0, 1, 2 };
+
+    const auto data = make_mdlv_mesh ("MDLV0023", 48, 12, positions, uvs, indices);
+    auto mesh = scene::parse_puppet_mesh (data);
+    CHECK (mesh.has_value ());
+    CHECK_EQ (mesh->positions.size (), 3U);
+    CHECK_EQ (mesh->uvs.size (), 3U);
+    CHECK_EQ (mesh->indices.size (), 3U);
+    CHECK_EQ (mesh->positions[0].y, 10.0F);
+    CHECK_EQ (mesh->uvs[0].x, 0.5F);
+}
+
+TEST (scene_puppet_mesh_parse_corrupted_header) {
+    const std::array<core::Vec3, 3> positions = { {
+	{ 0.0F, 0.0F, 0.0F },
+	{ 1.0F, 0.0F, 0.0F },
+	{ 0.0F, 1.0F, 0.0F },
+    } };
+    const std::array<core::Vec2, 3> uvs = { { { 0.0F, 0.0F }, { 1.0F, 0.0F }, { 0.0F, 1.0F } } };
+    const std::array<std::uint16_t, 3> indices = { 0, 1, 2 };
+
+    const auto data = make_mdlv_mesh ("BADV0001", 80, 72, positions, uvs, indices);
+    auto mesh = scene::parse_puppet_mesh (data);
+    CHECK (!mesh.has_value ());
+    CHECK (mesh.error ().code == core::ErrorCode::unsupported);
+}
+
+TEST (scene_puppet_mesh_parse_truncated_bytes) {
+    // Fewer than 8 bytes
+    std::vector<std::byte> short_data = { std::byte { 'M' }, std::byte { 'D' }, std::byte { 'L' } };
+    auto mesh_short = scene::parse_puppet_mesh (short_data);
+    CHECK (!mesh_short.has_value ());
+    CHECK (mesh_short.error ().code == core::ErrorCode::malformed_data);
+
+    // Truncated body (cut before vertices end)
+    const std::array<core::Vec3, 4> positions = { {
+	{ -50.0F, 50.0F, 0.0F },
+	{ 50.0F, 50.0F, 0.0F },
+	{ 50.0F, -50.0F, 0.0F },
+	{ -50.0F, -50.0F, 0.0F },
+    } };
+    const std::array<core::Vec2, 4> uvs = { {
+	{ 0.0F, 0.0F },
+	{ 1.0F, 0.0F },
+	{ 1.0F, 1.0F },
+	{ 0.0F, 1.0F },
+    } };
+    const std::array<std::uint16_t, 6> indices = { 0, 1, 2, 0, 2, 3 };
+
+    auto full_data = make_mdlv_mesh ("MDLV0021", 80, 72, positions, uvs, indices);
+    full_data.resize (full_data.size () / 2);
+    auto mesh_trunc = scene::parse_puppet_mesh (full_data);
+    CHECK (!mesh_trunc.has_value ());
+    CHECK (mesh_trunc.error ().code == core::ErrorCode::malformed_data);
+}
+
+TEST (scene_puppet_mesh_parse_out_of_bounds_indices) {
+    const std::array<core::Vec3, 3> positions = { {
+	{ 0.0F, 0.0F, 0.0F },
+	{ 1.0F, 0.0F, 0.0F },
+	{ 0.0F, 1.0F, 0.0F },
+    } };
+    const std::array<core::Vec2, 3> uvs = { { { 0.0F, 0.0F }, { 1.0F, 0.0F }, { 0.0F, 1.0F } } };
+    // Index 99 is invalid since vertex count is 3
+    const std::array<std::uint16_t, 3> indices = { 0, 99, 2 };
+
+    const auto data = make_mdlv_mesh ("MDLV0021", 80, 72, positions, uvs, indices);
+    auto mesh = scene::parse_puppet_mesh (data);
+    CHECK (!mesh.has_value ());
+    CHECK (mesh.error ().code == core::ErrorCode::malformed_data);
+}
+
+TEST (scene_puppet_mesh_headless_render) {
+    we::test::TempDir temp;
+    we::test::write_text (
+	temp / "scene.json",
+	R"({
+            "camera": {"center": [0,0,0], "eye": [0,0,1], "up": [0,1,0]},
+            "general": {"orthogonalprojection": {"width": 100, "height": 100}, "clearcolor": [0,0,0]},
+            "objects": [{
+                "id": 1,
+                "name": "puppet_layer",
+                "image": "models/puppet.json",
+                "origin": [50,50,0],
+                "scale": [1,1,1],
+                "alpha": 1,
+                "color": [1,1,1],
+                "size": [100,100],
+                "visible": true
+            }]
+        })"
+    );
+    we::test::write_text (
+	temp / "models/puppet.json",
+	R"({"material":"materials/puppet.json", "puppet":"models/puppet.mdl", "width":100, "height":100})"
+    );
+    we::test::write_text (
+	temp / "materials/puppet.json",
+	R"({"passes":[{"shader":"genericimage","textures":["textures/green.tex"],"blending":"normal"}]})"
+    );
+
+    const std::array<std::uint8_t, 4> green = { 0, 255, 0, 255 };
+    we::test::write_bytes (temp / "textures/green.tex", make_argb_texture (1, 1, green));
+
+    const std::array<core::Vec3, 4> positions = { {
+	{ -50.0F, 50.0F, 0.0F },
+	{ 50.0F, 50.0F, 0.0F },
+	{ 50.0F, -50.0F, 0.0F },
+	{ -50.0F, -50.0F, 0.0F },
+    } };
+    const std::array<core::Vec2, 4> uvs = { {
+	{ 0.0F, 0.0F },
+	{ 1.0F, 0.0F },
+	{ 1.0F, 1.0F },
+	{ 0.0F, 1.0F },
+    } };
+    const std::array<std::uint16_t, 6> indices = { 0, 1, 2, 0, 2, 3 };
+
+    we::test::write_bytes (temp / "models/puppet.mdl", make_mdlv_mesh ("MDLV0021", 80, 72, positions, uvs, indices));
+
+    auto assets = scene::AssetContainer::open (temp.path ());
+    CHECK (assets.has_value ());
+    auto parsed = scene::load_scene (*assets, "scene.json");
+    CHECK (parsed.has_value ());
+    CHECK_EQ (parsed->images.size (), 1U);
+    CHECK (parsed->images[0].puppet_mesh.has_value ());
+    CHECK_EQ (parsed->images[0].puppet_mesh->positions.size (), 4U);
+
+    auto context = gfx::Context::create_headless ();
+    CHECK (context.has_value ());
+    auto surface = context->create_pbuffer (100, 100);
+    CHECK (surface.has_value ());
+    context->make_current (&*surface);
+
+    auto renderer = gfx::Renderer::create ();
+    CHECK (renderer.has_value ());
+
+    auto scene_renderer = scene::SceneRenderer::build (*parsed, *assets);
+    CHECK (scene_renderer.has_value ());
+    CHECK (scene_renderer->layer_has_puppet_mesh (0));
+
+    renderer->begin (100, 100, scene_renderer->clear_color ());
+    scene_renderer->render (*renderer);
+    renderer->end ();
+
+    std::vector<std::uint8_t> output (100 * 100 * 4);
+    surface->read_rgba (output, 100, 100);
+    // Check center pixel at (50, 50)
+    const std::size_t center_idx = (50 * 100 + 50) * 4;
+    CHECK (output[center_idx + 0] < 50);
+    CHECK (output[center_idx + 1] > 200); // Green
+    CHECK (output[center_idx + 2] < 50);
+}

@@ -5,8 +5,11 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <limits>
 #include <optional>
 #include <sstream>
@@ -222,6 +225,7 @@ namespace {
 	bool solid_layer = false;
 	bool fullscreen = false;
 	bool passthrough = false;
+	std::string puppet;
     };
 
     struct PassDoc {
@@ -243,6 +247,7 @@ namespace {
 	core::Vec3 emissive_color { 1.0F, 1.0F, 1.0F };
 	float emissive_brightness = 1.0F;
 	std::vector<std::string> textures;
+	std::string puppet;
     };
 
     std::expected<ModelDoc, core::Error> load_model (const AssetContainer& assets, const std::string& path) {
@@ -272,6 +277,7 @@ namespace {
 	model.solid_layer = boolean (root, "solidlayer", false);
 	model.fullscreen = boolean (root, "fullscreen", false);
 	model.passthrough = boolean (root, "passthrough", false);
+	model.puppet = text (root, "puppet");
 	return model;
     }
 
@@ -357,6 +363,8 @@ namespace {
 		}
 	    }
 	}
+
+	pass.puppet = text (root, "puppet");
 
 	return pass;
     }
@@ -756,10 +764,173 @@ namespace {
 	    return std::nullopt;
 	}
 
+	std::string puppet_path = model->puppet;
+	if (puppet_path.empty ()) {
+	    puppet_path = pass->puppet;
+	}
+	if (puppet_path.empty ()) {
+	    puppet_path = text (object, "puppet");
+	}
+
+	if (!puppet_path.empty ()) {
+	    auto puppet_bytes = assets.read (puppet_path);
+	    if (!puppet_bytes) {
+		core::log_warn (
+		    "cannot read puppet mesh '", puppet_path, "' for image '", image.name,
+		    "': ", puppet_bytes.error ().message
+		);
+	    } else {
+		auto parsed_mesh = parse_puppet_mesh (*puppet_bytes);
+		if (!parsed_mesh) {
+		    core::log_warn (
+			"cannot parse puppet mesh '", puppet_path, "' for image '", image.name,
+			"': ", parsed_mesh.error ().message
+		    );
+		} else {
+		    image.puppet_mesh = std::move (*parsed_mesh);
+		}
+	    }
+	}
+
 	return image;
     }
 
 } // namespace
+
+std::expected<PuppetMesh, core::Error> parse_puppet_mesh (std::span<const std::byte> data) {
+    constexpr std::size_t marker_size = 8;
+    if (data.size () < marker_size) {
+	return core::fail (core::ErrorCode::malformed_data, "puppet data too short");
+    }
+
+    const std::string_view header { reinterpret_cast<const char*> (data.data ()), marker_size };
+    if (header != "MDLV0021" && header != "MDLV0023") {
+	return core::fail (
+	    core::ErrorCode::unsupported, "unsupported puppet model header '" + std::string (header) + "'"
+	);
+    }
+
+    std::size_t mdls_offset = data.size ();
+    for (std::size_t i = marker_size; i + 4 <= data.size (); ++i) {
+	if (std::memcmp (data.data () + i, "MDLS", 4) == 0) {
+	    mdls_offset = i;
+	    break;
+	}
+    }
+
+    const auto read_u32 = [&] (std::size_t offset) noexcept -> std::uint32_t {
+	std::uint32_t val = 0;
+	std::memcpy (&val, data.data () + offset, sizeof (val));
+	return val;
+    };
+    const auto read_float = [&] (std::size_t offset) noexcept -> float {
+	float val = 0.0F;
+	std::memcpy (&val, data.data () + offset, sizeof (val));
+	return val;
+    };
+
+    struct StrideConfig {
+	std::size_t stride;
+	std::size_t uv_offset;
+    };
+    constexpr std::array<StrideConfig, 3> configs = { {
+	{ 80, 72 }, // MDLV skeletal vertex stride from CImage.cpp
+	{ 48, 12 }, // MDLV0023 alternate stride
+	{ 32, 12 }, // MDLV0021 compact stride
+    } };
+
+    constexpr std::size_t mesh_header_size = sizeof (std::uint32_t) * 2;
+
+    struct MeshBlock {
+	std::size_t header_offset = 0;
+	std::uint32_t vertex_bytes = 0;
+	std::uint32_t index_bytes = 0;
+	StrideConfig config { 80, 72 };
+    };
+
+    std::optional<MeshBlock> mesh_block;
+
+    for (std::size_t offset = marker_size; offset + mesh_header_size + sizeof (std::uint32_t) < mdls_offset; ++offset) {
+	const std::uint32_t candidate_vertex_bytes = read_u32 (offset + sizeof (std::uint32_t));
+	const std::size_t vertices_offset = offset + mesh_header_size;
+	const std::size_t index_length_offset = vertices_offset + candidate_vertex_bytes;
+
+	if (candidate_vertex_bytes == 0 || index_length_offset + sizeof (std::uint32_t) > mdls_offset) {
+	    continue;
+	}
+
+	const StrideConfig* matched_cfg = nullptr;
+	for (const auto& cfg : configs) {
+	    if (candidate_vertex_bytes % cfg.stride == 0) {
+		matched_cfg = &cfg;
+		break;
+	    }
+	}
+	if (matched_cfg == nullptr) {
+	    continue;
+	}
+
+	const std::uint32_t candidate_index_bytes = read_u32 (index_length_offset);
+	const std::size_t indices_offset = index_length_offset + sizeof (std::uint32_t);
+	if (candidate_index_bytes == 0 || candidate_index_bytes % (sizeof (std::uint16_t) * 3) != 0
+	    || indices_offset + candidate_index_bytes > mdls_offset) {
+	    continue;
+	}
+
+	mesh_block = MeshBlock {
+	    .header_offset = offset,
+	    .vertex_bytes = candidate_vertex_bytes,
+	    .index_bytes = candidate_index_bytes,
+	    .config = *matched_cfg,
+	};
+	break;
+    }
+
+    if (!mesh_block.has_value ()) {
+	return core::fail (core::ErrorCode::malformed_data, "could not find a usable MDLV mesh block");
+    }
+
+    const std::size_t vertex_count = mesh_block->vertex_bytes / mesh_block->config.stride;
+    const std::size_t vertices_offset = mesh_block->header_offset + mesh_header_size;
+    const std::size_t indices_offset = vertices_offset + mesh_block->vertex_bytes + sizeof (std::uint32_t);
+    const std::size_t index_count = mesh_block->index_bytes / sizeof (std::uint16_t);
+
+    if (vertex_count == 0 || index_count == 0) {
+	return core::fail (core::ErrorCode::malformed_data, "empty puppet mesh");
+    }
+
+    PuppetMesh result;
+    result.positions.reserve (vertex_count);
+    result.uvs.reserve (vertex_count);
+
+    for (std::size_t i = 0; i < vertex_count; ++i) {
+	const std::size_t v_off = vertices_offset + i * mesh_block->config.stride;
+	const float x = read_float (v_off);
+	const float y = read_float (v_off + sizeof (float));
+	const float z = read_float (v_off + sizeof (float) * 2);
+	const float u = read_float (v_off + mesh_block->config.uv_offset);
+	const float v = read_float (v_off + mesh_block->config.uv_offset + sizeof (float));
+
+	result.positions.push_back ({ x, y, z });
+	result.uvs.push_back ({ u, v });
+    }
+
+    result.indices.reserve (index_count);
+    for (std::size_t i = 0; i < index_count; ++i) {
+	std::uint16_t val = 0;
+	std::memcpy (&val, data.data () + indices_offset + i * sizeof (std::uint16_t), sizeof (val));
+	if (val >= vertex_count) {
+	    return core::fail (
+		core::ErrorCode::malformed_data,
+		"invalid puppet mesh index " + std::to_string (val) + " >= vertex count "
+		    + std::to_string (vertex_count)
+	    );
+	}
+	result.indices.push_back (val);
+    }
+
+    return result;
+}
 
 std::expected<Scene, core::Error> load_scene (const AssetContainer& assets, const std::string& file) {
     auto source = assets.read_text (file);

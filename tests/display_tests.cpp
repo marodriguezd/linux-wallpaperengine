@@ -125,3 +125,16 @@ TEST (display_x11_root_driver_presents_through_root_window) {
     exercise_surface (**driver, **context, 0);
     (*driver)->pump ();
 }
+
+TEST (display_wayland_driver_fails_when_no_compositor) {
+    display::DriverOptions options;
+    options.backend = display::Backend::wayland;
+
+    auto driver = display::create_driver (options);
+    if (!driver) {
+	CHECK_EQ (driver.error ().code, core::ErrorCode::io);
+    } else {
+	CHECK_EQ ((*driver)->backend (), display::Backend::wayland);
+	(*driver)->pump ();
+    }
+}

@@ -1,0 +1,46 @@
+# Maintainer: Alexis Maiquez <aur@almamu.com>
+pkgname=linux-wallpaperengine
+pkgver=2.0.0
+pkgrel=1
+pkgdesc="Native Wallpaper Engine runtime for Linux"
+arch=('x86_64')
+url="https://github.com/Almamu/linux-wallpaperengine"
+license=('GPL-3.0-or-later')
+depends=(
+    'glibc'
+    'gcc-libs'
+    'libglvnd'
+    'libx11'
+    'lz4'
+    'mpv'
+    'wayland'
+)
+makedepends=(
+    'cmake'
+    'ninja'
+    'pkgconf'
+    'wayland-protocols'
+)
+optdepends=(
+    'quickshell: interactive wallpaper gallery UI'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cmake -B build -S "$pkgname-$pkgver" \
+        -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DWE_WARNINGS_AS_ERRORS=OFF \
+        -DWE_BUILD_TESTS=ON
+    cmake --build build
+}
+
+check() {
+    ctest --test-dir build --output-on-failure
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build
+}

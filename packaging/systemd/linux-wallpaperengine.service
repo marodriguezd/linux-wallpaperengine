@@ -1,0 +1,19 @@
+[Unit]
+Description=Linux Wallpaper Engine (default wallpaper)
+Documentation=https://github.com/Almamu/linux-wallpaperengine
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+Environment=WALLPAPER=default
+EnvironmentFile=-%E/linux-wallpaperengine/default.conf
+EnvironmentFile=-%E/linux-wallpaperengine/wallpaper.conf
+EnvironmentFile=-%E/we/default.conf
+ExecStart=/usr/bin/we run ${WALLPAPER}
+Restart=on-failure
+RestartSec=3s
+PassEnvironment=DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_RUNTIME_DIR
+
+[Install]
+WantedBy=graphical-session.target

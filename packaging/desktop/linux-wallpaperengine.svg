@@ -1,0 +1,159 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Frame Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#090d16"/>
+    </linearGradient>
+
+    <!-- Border Glow Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6"/>
+      <stop offset="40%" stop-color="#818cf8" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <!-- Display Screen Canvas Gradient -->
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f1d"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#050811"/>
+    </linearGradient>
+
+    <!-- Core Energy Radial Gradient -->
+    <radialGradient id="ambientGlow" cx="50%" cy="46%" r="50%">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.35"/>
+      <stop offset="45%" stop-color="#6366f1" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Dynamic Neon Cyan Gradient -->
+    <linearGradient id="cyanWave" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#06b6d4"/>
+      <stop offset="50%" stop-color="#22d3ee"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <!-- Dynamic Violet/Magenta Wave Gradient -->
+    <linearGradient id="violetWave" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="50%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+
+    <!-- Emerald Teal Flow Gradient -->
+    <linearGradient id="tealWave" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="50%" stop-color="#06b6d4"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+
+    <!-- Engine Wheel Metallic Gradient -->
+    <linearGradient id="gearGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="30%" stop-color="#818cf8"/>
+      <stop offset="70%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+
+    <!-- Inner Core Sun / Singularity -->
+    <linearGradient id="coreSun" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="35%" stop-color="#67e8f9"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+
+    <!-- Canvas Clip Path for Internal Elements -->
+    <clipPath id="screenClip">
+      <rect x="44" y="44" width="424" height="424" rx="72"/>
+    </clipPath>
+  </defs>
+
+  <!-- Base Squircle Plate -->
+  <rect x="28" y="28" width="456" height="456" rx="88" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="4"/>
+
+  <!-- Screen Viewport with Clip -->
+  <g clip-path="url(#screenClip)">
+    <!-- Deep Canvas Background -->
+    <rect x="44" y="44" width="424" height="424" fill="url(#screenGrad)"/>
+
+    <!-- Subtle Technical Grid Lines -->
+    <path d="M 44,150 L 468,150 M 44,256 L 468,256 M 44,362 L 468,362 M 150,44 L 150,468 M 256,44 L 256,468 M 362,44 L 362,468"
+          stroke="#334155" stroke-opacity="0.22" stroke-width="1.5" stroke-dasharray="4,8"/>
+
+    <!-- Ambient Core Glow -->
+    <circle cx="256" cy="235" r="190" fill="url(#ambientGlow)"/>
+
+    <!-- Sun / Luminous Source -->
+    <circle cx="256" cy="225" r="54" fill="url(#coreSun)" opacity="0.95"/>
+    <circle cx="256" cy="225" r="70" fill="none" stroke="#22d3ee" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="6,6"/>
+
+    <!-- Precision Wallpaper Engine Gear Teeth (Orbiting Ring) -->
+    <g transform="translate(256, 225)" opacity="0.85">
+      <circle cx="0" cy="0" r="102" fill="none" stroke="url(#gearGrad)" stroke-width="4" stroke-dasharray="16,8,8,8"/>
+      <!-- Radial Cog Blades -->
+      <path d="M -7,-120 L 7,-120 L 5,-104 L -5,-104 Z" fill="#38bdf8"/>
+      <path d="M -7,120 L 7,120 L 5,104 L -5,104 Z" fill="#6366f1"/>
+      <path d="M -120,-7 L -120,7 L -104,5 L -104,-5 Z" fill="#06b6d4"/>
+      <path d="M 120,-7 L 120,7 L 104,5 L 104,-5 Z" fill="#818cf8"/>
+      <path d="M -87,-87 L -77,-77 L -67,-87 L -77,-97 Z" fill="#22d3ee"/>
+      <path d="M 87,87 L 77,77 L 67,87 L 77,97 Z" fill="#a855f7"/>
+      <path d="M 87,-87 L 77,-77 L 87,-67 L 97,-77 Z" fill="#38bdf8"/>
+      <path d="M -87,87 L -77,77 L -87,67 L -97,77 Z" fill="#6366f1"/>
+    </g>
+
+    <!-- Deep Wave Layer 1 (Violet Horizon) -->
+    <path d="M 44,380 C 110,340 180,390 256,350 C 332,310 400,360 468,320 L 468,468 L 44,468 Z"
+          fill="url(#violetWave)" opacity="0.45"/>
+
+    <!-- Mid Wave Layer 2 (Emerald / Cyan Vector Ridge) -->
+    <path d="M 44,405 C 130,365 195,430 280,385 C 365,340 410,395 468,360 L 468,468 L 44,468 Z"
+          fill="url(#tealWave)" opacity="0.6"/>
+
+    <!-- Foreground Wave Layer 3 (Neon Cyan Precision Waveform) -->
+    <path d="M 44,435 C 120,390 190,445 270,410 C 350,375 410,420 468,395 L 468,468 L 44,468 Z"
+          fill="url(#cyanWave)" opacity="0.85"/>
+
+    <!-- Sharp Glowing Sine Peak Contour Line -->
+    <path d="M 44,435 C 120,390 190,445 270,410 C 350,375 410,420 468,395"
+          fill="none" stroke="#e0f2fe" stroke-width="3" stroke-linecap="round" opacity="0.95"/>
+
+    <!-- Second Crisp Contour Line -->
+    <path d="M 44,405 C 130,365 195,430 280,385 C 365,340 410,395 468,360"
+          fill="none" stroke="#a5f3fc" stroke-width="1.75" stroke-linecap="round" opacity="0.75"/>
+
+    <!-- Audio / Visualizer Frequency Bars at Screen Bottom -->
+    <g transform="translate(146, 432)" opacity="0.9">
+      <rect x="0" y="4" width="6" height="18" rx="3" fill="#38bdf8"/>
+      <rect x="14" y="-2" width="6" height="24" rx="3" fill="#38bdf8"/>
+      <rect x="28" y="-10" width="6" height="32" rx="3" fill="#22d3ee"/>
+      <rect x="42" y="-4" width="6" height="26" rx="3" fill="#22d3ee"/>
+      <rect x="56" y="2" width="6" height="20" rx="3" fill="#818cf8"/>
+      <rect x="70" y="-14" width="6" height="36" rx="3" fill="#a855f7"/>
+      <rect x="84" y="-22" width="6" height="44" rx="3" fill="#ffffff"/>
+      <rect x="98" y="-28" width="6" height="50" rx="3" fill="#ffffff"/>
+      <rect x="112" y="-28" width="6" height="50" rx="3" fill="#ffffff"/>
+      <rect x="126" y="-22" width="6" height="44" rx="3" fill="#ffffff"/>
+      <rect x="140" y="-14" width="6" height="36" rx="3" fill="#a855f7"/>
+      <rect x="154" y="2" width="6" height="20" rx="3" fill="#818cf8"/>
+      <rect x="168" y="-4" width="6" height="26" rx="3" fill="#22d3ee"/>
+      <rect x="182" y="-10" width="6" height="32" rx="3" fill="#22d3ee"/>
+      <rect x="196" y="-2" width="6" height="24" rx="3" fill="#38bdf8"/>
+      <rect x="210" y="4" width="6" height="18" rx="3" fill="#38bdf8"/>
+    </g>
+
+    <!-- Top Screen Status Indicators / Accent Corner Brackets -->
+    <path d="M 66,86 L 66,66 L 86,66" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    <path d="M 446,86 L 446,66 L 426,66" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+    <path d="M 66,426 L 66,446 L 86,446" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+    <path d="M 446,426 L 446,446 L 426,446" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" opacity="0.4"/>
+
+    <!-- Live Status LED Pill -->
+    <rect x="228" y="62" width="56" height="12" rx="6" fill="#090d16" stroke="#1e293b" stroke-width="1.5"/>
+    <circle cx="238" cy="68" r="3" fill="#10b981"/>
+    <rect x="246" y="66" width="28" height="4" rx="2" fill="#38bdf8" opacity="0.7"/>
+  </g>
+
+  <!-- Precision Bezel Inner Stroke / Glass Highlight -->
+  <rect x="44" y="44" width="424" height="424" rx="72" fill="none" stroke="#475569" stroke-width="2" stroke-opacity="0.35"/>
+</svg>

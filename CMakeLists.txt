@@ -5,6 +5,8 @@ project(linux-wallpaperengine
     DESCRIPTION "Native Wallpaper Engine runtime for Linux"
     LANGUAGES C CXX)
 
+include(GNUInstallDirs)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 set(CMAKE_CXX_STANDARD 23)
@@ -55,6 +57,89 @@ if (WE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()
+
+# ==============================================================================
+# Installation
+# ==============================================================================
+if (WE_BUILD_CLI)
+    # Desktop entry
+    install(FILES packaging/desktop/linux-wallpaperengine.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+        COMPONENT Application
+    )
+
+    # Scalable application icon
+    install(FILES packaging/desktop/linux-wallpaperengine.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+        COMPONENT Application
+    )
+
+    # Systemd user units
+    if (NOT DEFINED SYSTEMD_USER_UNIT_DIR)
+        set(SYSTEMD_USER_UNIT_DIR "lib/systemd/user")
+    endif ()
+
+    install(FILES
+        packaging/systemd/linux-wallpaperengine.service
+        packaging/systemd/linux-wallpaperengine@.service
+        DESTINATION ${SYSTEMD_USER_UNIT_DIR}
+        COMPONENT Systemd
+    )
+
+    # Quickshell Gallery integration
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/contrib/quickshell-gallery")
+        install(DIRECTORY contrib/quickshell-gallery
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/linux-wallpaperengine
+            COMPONENT Gallery
+        )
+    endif ()
+endif ()
+
+# ==============================================================================
+# Packaging (CPack)
+# ==============================================================================
+set(CPACK_PACKAGE_NAME "linux-wallpaperengine")
+set(CPACK_PACKAGE_VENDOR "linux-wallpaperengine")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_DESCRIPTION "Native, lightweight Wallpaper Engine runtime for Linux built from scratch in modern C++23.")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Almamu/linux-wallpaperengine")
+set(CPACK_PACKAGE_CONTACT "Alexis Maiquez <aur@almamu.com>")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_LICENSE "GPL-3.0-or-later")
+
+# Generators
+set(CPACK_GENERATOR "TGZ;DEB;RPM")
+set(CPACK_SOURCE_GENERATOR "TGZ")
+
+# Debian packaging
+if (NOT CPACK_DEBIAN_PACKAGE_ARCHITECTURE)
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64")
+        set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+    elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+        set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "arm64")
+    else ()
+        set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}")
+    endif ()
+endif ()
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "${CPACK_PACKAGE_CONTACT}")
+set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "${CPACK_PACKAGE_HOMEPAGE_URL}")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6, libstdc++6, libmpv2 | libmpv1, libwayland-client0, libx11-6, libegl1, liblz4-1")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
+
+# RPM packaging
+set(CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}")
+set(CPACK_RPM_PACKAGE_LICENSE "GPL-3.0-or-later")
+set(CPACK_RPM_PACKAGE_GROUP "Amusements/Graphics")
+set(CPACK_RPM_PACKAGE_URL "${CPACK_PACKAGE_HOMEPAGE_URL}")
+set(CPACK_RPM_PACKAGE_REQUIRES "mpv-libs, wayland, libX11, libglvnd-egl, lz4-libs")
+set(CPACK_RPM_PACKAGE_AUTOREQ OFF)
+
+include(CPack)
 
 message(STATUS "")
 message(STATUS "linux-wallpaperengine ${PROJECT_VERSION} (rebuild)")

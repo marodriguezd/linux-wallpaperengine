@@ -241,6 +241,9 @@ public:
 	return this->layers_.at (index).frames.size ();
     }
     [[nodiscard]] gfx::BlendMode layer_blend (std::size_t index) const { return this->layers_.at (index).blend; }
+    [[nodiscard]] bool layer_has_puppet_mesh (std::size_t index) const {
+	return this->layers_.at (index).puppet_gpu.has_value ();
+    }
     [[nodiscard]] bool has_audio () const noexcept { return this->audio_ != nullptr; }
 
 private:
@@ -285,6 +288,20 @@ private:
 	bool is_particle = false;
 	std::size_t particle_system_index = 0;
 	int order_index = 0;
+
+	struct PuppetGpu {
+	    gfx::GlVertexArray vao;
+	    gfx::GlBuffer vbo_positions;
+	    gfx::GlBuffer vbo_uvs;
+	    gfx::GlBuffer ebo;
+	    GLsizei index_count = 0;
+	    std::vector<core::Vec3> base_positions;
+	    std::vector<core::Vec3> current_positions;
+	    gfx::GlVertexArray local_vao;
+	    gfx::GlBuffer local_vbo_positions;
+	};
+
+	std::optional<PuppetGpu> puppet_gpu;
     };
 
     void render_effect_pass (
@@ -293,6 +310,7 @@ private:
     ) const;
 
     void render_particles (gfx::Renderer& renderer, ParticleSystemState& ps, float dt, float current_time) const;
+    void draw_puppet_layer (const Layer& layer, const gfx::Texture& texture) const;
     [[nodiscard]] core::Rect calculate_layer_uv (const Layer& layer, float elapsed) const;
 
     std::vector<Layer> layers_;
@@ -314,6 +332,7 @@ private:
     mutable std::unordered_map<std::string, gfx::Framebuffer> fbos_;
     std::vector<CompiledPass> bloom_passes_;
     gfx::Shader blit_shader_;
+    gfx::Shader puppet_shader_;
     gfx::GlVertexArray quad_vao_;
     gfx::GlBuffer quad_vbo_;
     mutable std::chrono::steady_clock::time_point last_render_time_ { std::chrono::steady_clock::now () };

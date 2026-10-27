@@ -1,0 +1,15 @@
+[Unit]
+Description=Linux Wallpaper Engine - %I
+Documentation=https://github.com/Almamu/linux-wallpaperengine
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/we run %I
+Restart=on-failure
+RestartSec=3s
+PassEnvironment=DISPLAY WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_RUNTIME_DIR
+
+[Install]
+WantedBy=graphical-session.target

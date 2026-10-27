@@ -1,5 +1,0 @@
-Lee @HANDOFF.md y asume el contexto técnico completo del rebuild en C++23 de linux-wallpaperengine.
-Ejecuta de manera autónoma y de principio a fin todo el plan de trabajo detallado en la sección de próximos pasos.
-Para cada fase planificada, delega la implementación y pruebas en paralelo a uno o varios subagentes especializados.
-Mantén limpio tu contexto principal recibiendo solo los reportes y verificaciones de los subagentes (debug y asan).
-Trabaja de forma continua y sin interrupciones hasta completar la nueva interfaz QML y el ajuste de la escena.

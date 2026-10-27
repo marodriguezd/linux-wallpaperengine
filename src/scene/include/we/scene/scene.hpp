@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -73,6 +76,12 @@ struct BloomSettings {
     core::Vec3 tint { 1.0F, 1.0F, 1.0F };
 };
 
+struct PuppetMesh {
+    std::vector<core::Vec3> positions;
+    std::vector<core::Vec2> uvs;
+    std::vector<std::uint16_t> indices;
+};
+
 struct SceneImage {
     int id = 0;
     int order_index = 0;
@@ -115,7 +124,10 @@ struct SceneImage {
     std::vector<SceneEffect> effects;
     bool copy_background = false;
     bool passthrough = false;
+    std::optional<PuppetMesh> puppet_mesh;
 };
+
+using ImageLayer = SceneImage;
 
 struct SceneLight {
     int id = 0;
@@ -165,6 +177,7 @@ struct Scene {
     int skipped_objects = 0;
 };
 
+[[nodiscard]] std::expected<PuppetMesh, core::Error> parse_puppet_mesh (std::span<const std::byte> data);
 [[nodiscard]] std::expected<Scene, core::Error> load_scene (const AssetContainer& assets, const std::string& file);
 
 } // namespace we::scene

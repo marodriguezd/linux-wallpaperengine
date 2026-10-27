@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Linux Wallpaper Engine
+GenericName=Live Wallpaper Runtime
+Comment=Native Wallpaper Engine runtime for Linux
+Exec=we run %u
+Icon=linux-wallpaperengine
+Terminal=false
+Categories=Utility;Graphics;Settings;
+MimeType=x-scheme-handler/we;
+Keywords=wallpaper;wallpaperengine;live;background;screensaver;
+StartupNotify=false

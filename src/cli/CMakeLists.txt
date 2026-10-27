@@ -1,6 +1,11 @@
-add_executable(we_cli main.cpp)
-we_configure_target(we_cli)
+add_executable(we main.cpp)
+we_configure_target(we)
+add_executable(we_cli ALIAS we)
 
-target_link_libraries(we_cli PRIVATE we_app we_scene we_display we_power we_presets we_steam we_gfx we_core)
-set_target_properties(we_cli PROPERTIES OUTPUT_NAME we)
-target_compile_definitions(we_cli PRIVATE WE_VERSION="${PROJECT_VERSION}")
+target_link_libraries(we PRIVATE we_app we_scene we_display we_power we_presets we_steam we_gfx we_core)
+target_compile_definitions(we PRIVATE WE_VERSION="${PROJECT_VERSION}")
+
+install(TARGETS we
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    COMPONENT Application
+)

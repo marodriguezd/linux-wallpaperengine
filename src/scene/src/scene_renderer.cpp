@@ -1480,6 +1480,90 @@ SceneRenderer::build (const Scene& scene, const AssetContainer& assets, const Sc
 	    }
 	}
 
+	if (image.puppet_mesh.has_value () && !image.puppet_mesh->positions.empty ()
+	    && !image.puppet_mesh->indices.empty ()) {
+	    Layer::PuppetGpu puppet;
+	    puppet.index_count = static_cast<GLsizei> (image.puppet_mesh->indices.size ());
+	    puppet.base_positions.reserve (image.puppet_mesh->positions.size ());
+	    puppet.current_positions.reserve (image.puppet_mesh->positions.size ());
+
+	    for (const auto& raw_pos : image.puppet_mesh->positions) {
+		const float x_local = raw_pos.x * image.scale.x;
+		const float y_local = raw_pos.y * image.scale.y;
+		const auto rotated = rotate (core::Vec2 { x_local, y_local }, angle);
+		const core::Vec3 world_pos { center.x + rotated.x, center.y + rotated.y, image.origin.z + raw_pos.z };
+		puppet.base_positions.push_back (world_pos);
+		puppet.current_positions.push_back (world_pos);
+	    }
+
+	    puppet.vao = gfx::GlVertexArray::generate ();
+	    puppet.vbo_positions = gfx::GlBuffer::generate ();
+	    puppet.vbo_uvs = gfx::GlBuffer::generate ();
+	    puppet.ebo = gfx::GlBuffer::generate ();
+
+	    puppet.vao.bind ();
+
+	    puppet.vbo_positions.bind (GL_ARRAY_BUFFER);
+	    glBufferData (
+		GL_ARRAY_BUFFER, static_cast<GLsizeiptr> (puppet.current_positions.size () * sizeof (core::Vec3)),
+		puppet.current_positions.data (), GL_DYNAMIC_DRAW
+	    );
+	    glEnableVertexAttribArray (0);
+	    glVertexAttribPointer (0, 3, GL_FLOAT, GL_FALSE, sizeof (core::Vec3), nullptr);
+
+	    puppet.vbo_uvs.bind (GL_ARRAY_BUFFER);
+	    glBufferData (
+		GL_ARRAY_BUFFER, static_cast<GLsizeiptr> (image.puppet_mesh->uvs.size () * sizeof (core::Vec2)),
+		image.puppet_mesh->uvs.data (), GL_STATIC_DRAW
+	    );
+	    glEnableVertexAttribArray (1);
+	    glVertexAttribPointer (1, 2, GL_FLOAT, GL_FALSE, sizeof (core::Vec2), nullptr);
+
+	    puppet.ebo.bind (GL_ELEMENT_ARRAY_BUFFER);
+	    glBufferData (
+		GL_ELEMENT_ARRAY_BUFFER,
+		static_cast<GLsizeiptr> (image.puppet_mesh->indices.size () * sizeof (std::uint16_t)),
+		image.puppet_mesh->indices.data (), GL_STATIC_DRAW
+	    );
+
+	    gfx::GlVertexArray::unbind ();
+	    gfx::GlBuffer::unbind (GL_ARRAY_BUFFER);
+
+	    if (!layer.effects.empty ()) {
+		std::vector<core::Vec3> local_positions;
+		local_positions.reserve (image.puppet_mesh->positions.size ());
+		for (const auto& raw_pos : image.puppet_mesh->positions) {
+		    const float x_ndc = half_width > 0.0F ? (raw_pos.x * image.scale.x) / half_width : 0.0F;
+		    const float y_ndc = half_height > 0.0F ? (raw_pos.y * image.scale.y) / half_height : 0.0F;
+		    local_positions.push_back ({ x_ndc, y_ndc, 0.0F });
+		}
+
+		puppet.local_vao = gfx::GlVertexArray::generate ();
+		puppet.local_vbo_positions = gfx::GlBuffer::generate ();
+
+		puppet.local_vao.bind ();
+
+		puppet.local_vbo_positions.bind (GL_ARRAY_BUFFER);
+		glBufferData (
+		    GL_ARRAY_BUFFER, static_cast<GLsizeiptr> (local_positions.size () * sizeof (core::Vec3)),
+		    local_positions.data (), GL_STATIC_DRAW
+		);
+		glEnableVertexAttribArray (0);
+		glVertexAttribPointer (0, 3, GL_FLOAT, GL_FALSE, sizeof (core::Vec3), nullptr);
+
+		puppet.vbo_uvs.bind (GL_ARRAY_BUFFER);
+		glEnableVertexAttribArray (1);
+		glVertexAttribPointer (1, 2, GL_FLOAT, GL_FALSE, sizeof (core::Vec2), nullptr);
+
+		puppet.ebo.bind (GL_ELEMENT_ARRAY_BUFFER);
+
+		gfx::GlVertexArray::unbind ();
+		gfx::GlBuffer::unbind (GL_ARRAY_BUFFER);
+	    }
+
+	    layer.puppet_gpu = std::move (puppet);
+	}
+
 	result.layers_.push_back (std::move (layer));
     }
 
@@ -1859,6 +1943,35 @@ SceneRenderer::build (const Scene& scene, const AssetContainer& assets, const Sc
 	result.blit_shader_ = std::move (*blit_sh);
     }
 
+    {
+	constexpr const char* puppet_vert = "#version 330 core\n"
+					    "layout (location = 0) in vec3 a_Position;\n"
+					    "layout (location = 1) in vec2 a_TexCoord;\n"
+					    "uniform mat4 u_Projection;\n"
+					    "out vec2 v_TexCoord;\n"
+					    "void main() {\n"
+					    "    gl_Position = u_Projection * vec4(a_Position, 1.0);\n"
+					    "    v_TexCoord = a_TexCoord;\n"
+					    "}\n";
+
+	constexpr const char* puppet_frag = "#version 330 core\n"
+					    "in vec2 v_TexCoord;\n"
+					    "out vec4 out_FragColor;\n"
+					    "uniform sampler2D u_Texture;\n"
+					    "uniform vec4 u_Tint;\n"
+					    "void main() {\n"
+					    "    out_FragColor = texture(u_Texture, v_TexCoord) * u_Tint;\n"
+					    "}\n";
+
+	auto puppet_sh = gfx::Shader::build (puppet_vert, puppet_frag, "puppet");
+	if (!puppet_sh) {
+	    return core::fail (
+		core::ErrorCode::unsupported, "failed to compile puppet shader: " + puppet_sh.error ().message
+	    );
+	}
+	result.puppet_shader_ = std::move (*puppet_sh);
+    }
+
     if (options.audio_enabled && !scene.sounds.empty ()) {
 	auto audio = std::make_unique<SceneAudio> ();
 	audio->mpv = mpv_create ();
@@ -1988,6 +2101,21 @@ void SceneRenderer::update_input (std::optional<core::Vec2> normalized_cursor, f
 	for (std::size_t i = 0; i < layer.corners.size (); ++i) {
 	    layer.corners[i].x = layer.base_corners[i].x + offset_x;
 	    layer.corners[i].y = layer.base_corners[i].y + offset_y;
+	}
+
+	if (layer.puppet_gpu.has_value ()) {
+	    auto& pg = *layer.puppet_gpu;
+	    for (std::size_t i = 0; i < pg.base_positions.size (); ++i) {
+		pg.current_positions[i].x = pg.base_positions[i].x + offset_x;
+		pg.current_positions[i].y = pg.base_positions[i].y + offset_y;
+		pg.current_positions[i].z = pg.base_positions[i].z;
+	    }
+	    pg.vbo_positions.bind (GL_ARRAY_BUFFER);
+	    glBufferSubData (
+		GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr> (pg.current_positions.size () * sizeof (core::Vec3)),
+		pg.current_positions.data ()
+	    );
+	    gfx::GlBuffer::unbind (GL_ARRAY_BUFFER);
 	}
     }
 }
@@ -2290,7 +2418,11 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 
 	    const core::Rect current_uv = this->calculate_layer_uv (layer, elapsed);
 
-	    if (layer.lighting || reflective) {
+	    if (layer.puppet_gpu.has_value ()) {
+		renderer.flush ();
+		this->draw_puppet_layer (layer, *layer.texture);
+		frame_captured = false;
+	    } else if (layer.lighting || reflective) {
 		if (reflective) {
 		    // One snapshot per run: later layers reuse the frame as it looked
 		    // before the first reflective layer of the run.
@@ -2407,9 +2539,17 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 	    this->blit_shader_.set_int ("u_Texture", 0);
 	    glActiveTexture (GL_TEXTURE0);
 	    glBindTexture (GL_TEXTURE_2D, layer.texture->id ());
-	    this->quad_vao_.bind ();
-	    glDrawArrays (GL_TRIANGLES, 0, 6);
-	    gfx::GlVertexArray::unbind ();
+	    if (layer.puppet_gpu.has_value () && layer.puppet_gpu->local_vao.valid ()) {
+		glClearColor (0.0F, 0.0F, 0.0F, 0.0F);
+		glClear (GL_COLOR_BUFFER_BIT);
+		layer.puppet_gpu->local_vao.bind ();
+		glDrawElements (GL_TRIANGLES, layer.puppet_gpu->index_count, GL_UNSIGNED_SHORT, nullptr);
+		gfx::GlVertexArray::unbind ();
+	    } else {
+		this->quad_vao_.bind ();
+		glDrawArrays (GL_TRIANGLES, 0, 6);
+		gfx::GlVertexArray::unbind ();
+	    }
 	    glBindTexture (GL_TEXTURE_2D, 0);
 
 	    gfx::Framebuffer* current_layer_fbo = &*layer.fbo_a;
@@ -2430,7 +2570,11 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
 	    quad_texture = &layer.effect_view;
 	}
 
-	if (layer.lighting || reflective) {
+	if (layer.puppet_gpu.has_value ()) {
+	    renderer.flush ();
+	    this->draw_puppet_layer (layer, *quad_texture);
+	    frame_captured = false;
+	} else if (layer.lighting || reflective) {
 	    if (reflective) {
 		if (!frame_captured) {
 		    renderer.capture_frame ();
@@ -2505,6 +2649,37 @@ void SceneRenderer::render (gfx::Renderer& renderer) const {
     this->quad_vao_.bind ();
     glDrawArrays (GL_TRIANGLES, 0, 6);
     gfx::GlVertexArray::unbind ();
+    glBindTexture (GL_TEXTURE_2D, 0);
+}
+
+void SceneRenderer::draw_puppet_layer (const Layer& layer, const gfx::Texture& texture) const {
+    if (!layer.puppet_gpu.has_value () || !layer.puppet_gpu->vao.valid ()) {
+	return;
+    }
+
+    this->puppet_shader_.use ();
+    this->puppet_shader_.set_mat4 ("u_Projection", this->view_projection_);
+    this->puppet_shader_.set_int ("u_Texture", 0);
+    this->puppet_shader_.set_vec4 ("u_Tint", core::Vec4 { layer.tint.r, layer.tint.g, layer.tint.b, layer.tint.a });
+
+    glEnable (GL_BLEND);
+    switch (layer.blend) {
+	case gfx::BlendMode::normal:
+	case gfx::BlendMode::translucent:
+	    glBlendFuncSeparate (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+	    break;
+	case gfx::BlendMode::additive:
+	    glBlendFuncSeparate (GL_SRC_ALPHA, GL_ONE, GL_ONE, GL_ONE);
+	    break;
+    }
+
+    glActiveTexture (GL_TEXTURE0);
+    glBindTexture (GL_TEXTURE_2D, texture.id ());
+
+    layer.puppet_gpu->vao.bind ();
+    glDrawElements (GL_TRIANGLES, layer.puppet_gpu->index_count, GL_UNSIGNED_SHORT, nullptr);
+    gfx::GlVertexArray::unbind ();
+
     glBindTexture (GL_TEXTURE_2D, 0);
 }
 
