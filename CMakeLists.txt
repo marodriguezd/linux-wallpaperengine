@@ -47,6 +47,7 @@ add_subdirectory(src/gfx)
 add_subdirectory(src/display)
 add_subdirectory(src/scene)
 add_subdirectory(src/power)
+add_subdirectory(src/desktophut)
 add_subdirectory(src/app)
 
 if (WE_BUILD_CLI)

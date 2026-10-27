@@ -17,15 +17,27 @@ Rectangle {
     property color colTextPrimary: "#F1F5F9"
     property color colTextMuted: "#94A3B8"
     property color colTextDim: "#64748B"
+    property color colDanger: "#EF4444"
+    property bool confirmDeleteState: false
 
     signal cardClicked(var item)
     signal applyRequested(var item)
     signal favRequested(var item)
     signal inspectRequested(var item)
+    signal deleteRequested(var item)
 
     readonly property string itemTitle: (root.itemData && (root.itemData.title || root.itemData.id)) ? String(root.itemData.title || root.itemData.id) : "Wallpaper"
     readonly property string itemType: (root.itemData && root.itemData.type) ? String(root.itemData.type).toUpperCase() : "WALLPAPER"
     readonly property bool isFav: Boolean(root.itemData && root.itemData.favorite)
+    readonly property bool isWPEngine: {
+        if (!root.itemData) return false;
+        if (root.itemData.source === "wallpaperengine") return true;
+        if (root.itemData.source && root.itemData.source !== "wallpaperengine") return false;
+        const id = String(root.itemData.id || "");
+        return id.indexOf("desktophut-") !== 0 && id.indexOf("motionbgs-") !== 0 &&
+               id.indexOf("bing-") !== 0 && id.indexOf("img-") !== 0 &&
+               id.indexOf("fetch-") !== 0 && id.indexOf("import-") !== 0;
+    }
     readonly property string thumbUrl: {
         if (!root.itemData) return "";
         if (root.itemData.thumb) {
@@ -37,7 +49,15 @@ Rectangle {
         return "";
     }
 
-    readonly property bool isHovered: (cardHoverHandler && cardHoverHandler.hovered) || cardHover.containsMouse || applyBtnArea.containsMouse || inspectArea.containsMouse || favArea.containsMouse
+    readonly property bool isHovered: (cardHoverHandler && cardHoverHandler.hovered) || cardHover.containsMouse || applyBtnArea.containsMouse || inspectArea.containsMouse || favArea.containsMouse || trashArea.containsMouse
+
+    Timer {
+        id: deleteConfirmTimer
+        interval: 3000
+        running: false
+        repeat: false
+        onTriggered: root.confirmDeleteState = false
+    }
 
     HoverHandler {
         id: cardHoverHandler
@@ -230,6 +250,74 @@ Rectangle {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.inspectRequested(root.itemData)
+                }
+            }
+
+            // Delete / Protection Action Pill
+            Rectangle {
+                implicitWidth: root.confirmDeleteState ? 54 : 22
+                implicitHeight: 22
+                radius: 4
+                color: {
+                    if (root.isWPEngine) {
+                        return trashArea.containsMouse ? Qt.rgba(245/255, 158/255, 11/255, 0.25) : Qt.rgba(0,0,0,0.5);
+                    }
+                    if (root.confirmDeleteState) {
+                        return root.colDanger;
+                    }
+                    return trashArea.containsMouse ? Qt.rgba(239/255, 68/255, 68/255, 0.3) : Qt.rgba(0,0,0,0.5);
+                }
+                border.color: {
+                    if (root.isWPEngine) {
+                        return trashArea.containsMouse ? root.colTelemetryAmber : root.colBorderSubtle;
+                    }
+                    if (root.confirmDeleteState) {
+                        return root.colDanger;
+                    }
+                    return trashArea.containsMouse ? root.colDanger : root.colBorderSubtle;
+                }
+                border.width: 1
+
+                Behavior on implicitWidth { NumberAnimation { duration: 120 } }
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 2
+
+                    Text {
+                        text: root.isWPEngine ? "🔒" : "🗑"
+                        font.pixelSize: 10
+                        color: root.isWPEngine ? root.colTelemetryAmber : (root.confirmDeleteState ? "#FFFFFF" : root.colTextPrimary)
+                    }
+
+                    Text {
+                        visible: root.confirmDeleteState && !root.isWPEngine
+                        text: "Del?"
+                        font.pixelSize: 9
+                        font.weight: Font.Bold
+                        color: "#FFFFFF"
+                    }
+                }
+
+                MouseArea {
+                    id: trashArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: root.isWPEngine ? Qt.ForbiddenCursor : Qt.PointingHandCursor
+                    onClicked: {
+                        if (root.isWPEngine) {
+                            root.deleteRequested(root.itemData);
+                            return;
+                        }
+                        if (!root.confirmDeleteState) {
+                            root.confirmDeleteState = true;
+                            deleteConfirmTimer.restart();
+                        } else {
+                            root.confirmDeleteState = false;
+                            deleteConfirmTimer.stop();
+                            root.deleteRequested(root.itemData);
+                        }
+                    }
                 }
             }
         }

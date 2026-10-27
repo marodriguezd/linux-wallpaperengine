@@ -46,6 +46,83 @@ FloatingWindow {
         border.width: 1
         radius: root.cardRadius
 
+        // ================= FLOATING NOTICE / BANNER TOAST =================
+        Rectangle {
+            id: noticeBanner
+            visible: root.galleryModel.noticeMessage !== ""
+            anchors.top: parent.top
+            anchors.topMargin: 12
+            anchors.horizontalCenter: parent.horizontalCenter
+            z: 999
+            implicitWidth: Math.min(parent.width - 48, noticeLayout.implicitWidth + 32)
+            implicitHeight: noticeLayout.implicitHeight + 16
+            radius: 8
+            color: {
+                if (root.galleryModel.noticeType === "blocked" || root.galleryModel.noticeType === "warning") {
+                    return "#1F1A15";
+                }
+                if (root.galleryModel.noticeType === "success") {
+                    return "#12241A";
+                }
+                return root.colSurfaceRaised;
+            }
+            border.color: {
+                if (root.galleryModel.noticeType === "blocked" || root.galleryModel.noticeType === "warning") {
+                    return root.colTelemetryAmber;
+                }
+                if (root.galleryModel.noticeType === "success") {
+                    return root.colSuccess;
+                }
+                return root.colPacingCyan;
+            }
+            border.width: 1.5
+
+            RowLayout {
+                id: noticeLayout
+                anchors.centerIn: parent
+                spacing: 10
+
+                Text {
+                    text: {
+                        if (root.galleryModel.noticeType === "blocked") return "🔒";
+                        if (root.galleryModel.noticeType === "warning") return "⚠️";
+                        if (root.galleryModel.noticeType === "success") return "✓";
+                        return "ℹ";
+                    }
+                    font.pixelSize: 14
+                }
+
+                Text {
+                    text: root.galleryModel.noticeMessage
+                    font.pixelSize: 11
+                    font.weight: Font.DemiBold
+                    color: root.colTextPrimary
+                    wrapMode: Text.WordWrap
+                    Layout.maximumWidth: root.width - 120
+                }
+
+                Rectangle {
+                    implicitWidth: 20
+                    implicitHeight: 20
+                    radius: 10
+                    color: Qt.rgba(255, 255, 255, 0.1)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "✕"
+                        font.pixelSize: 10
+                        color: root.colTextMuted
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.galleryModel.clearNotice()
+                    }
+                }
+            }
+        }
+
         ColumnLayout {
             anchors.fill: parent
             anchors.margins: 12
@@ -111,6 +188,9 @@ FloatingWindow {
                         onInspectRequested: (item) => {
                             root.galleryModel.inspect(item);
                         }
+                        onDeleteRequested: (item) => {
+                            root.galleryModel.requestDelete(item);
+                        }
                         onResetFiltersRequested: {
                             root.galleryModel.query = "";
                             root.galleryModel.typeFilter = "";
@@ -131,7 +211,7 @@ FloatingWindow {
                             spacing: 8
 
                             Rectangle {
-                                implicitWidth: 320
+                                implicitWidth: 420
                                 implicitHeight: 28
                                 radius: 5
                                 color: root.colSurface
@@ -147,6 +227,7 @@ FloatingWindow {
                                             { id: "bing", label: "Bing Daily" },
                                             { id: "wallhaven", label: "Wallhaven" },
                                             { id: "motionbgs", label: "MotionBGS" },
+                                            { id: "desktophut", label: "DesktopHut" },
                                             { id: "minimal", label: "Minimal" }
                                         ]
 
@@ -205,98 +286,343 @@ FloatingWindow {
                             }
                         }
 
+                        // Category chips for DesktopHut
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            visible: root.galleryModel.exploreSource === "desktophut"
+
+                            Repeater {
+                                model: [
+                                    { id: "", label: "Trending" },
+                                    { id: "anime", label: "Anime" },
+                                    { id: "gaming", label: "Gaming" },
+                                    { id: "nature", label: "Nature" },
+                                    { id: "sci-fi", label: "Sci-Fi" },
+                                    { id: "cars", label: "Cars" },
+                                    { id: "cyberpunk", label: "Cyberpunk" },
+                                    { id: "fantasy", label: "Fantasy" }
+                                ]
+
+                                Rectangle {
+                                    required property var modelData
+                                    required property int index
+                                    implicitWidth: catChipText.implicitWidth + 14
+                                    implicitHeight: 22
+                                    radius: 11
+                                    readonly property bool isSelected: (root.galleryModel.exploreQuery === modelData.id) || (modelData.id === "" && root.galleryModel.exploreQuery === "")
+                                    color: isSelected ? Qt.rgba(56/255, 189/255, 248/255, 0.25) : root.colSurface
+                                    border.color: isSelected ? root.colPacingCyan : root.colBorderSubtle
+                                    border.width: 1
+
+                                    Text {
+                                        id: catChipText
+                                        anchors.centerIn: parent
+                                        text: parent.modelData.label
+                                        font.pixelSize: 10
+                                        font.weight: parent.isSelected ? Font.Bold : Font.Normal
+                                        color: parent.isSelected ? root.colPacingCyan : root.colTextMuted
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.galleryModel.exploreQuery = parent.modelData.id;
+                                            root.galleryModel.refreshExplore();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Explore Grid View
                         Flickable {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             contentWidth: width
-                            contentHeight: exploreFlow.implicitHeight + 60
+                            contentHeight: exploreCol.implicitHeight + 40
                             boundsBehavior: Flickable.StopAtBounds
                             clip: true
 
-                            Flow {
-                                id: exploreFlow
+                            ColumnLayout {
+                                id: exploreCol
                                 width: parent.width
-                                spacing: 12
+                                spacing: 14
 
-                                Repeater {
-                                    model: root.galleryModel.exploreItems
+                                Flow {
+                                    id: exploreFlow
+                                    Layout.fillWidth: true
+                                    spacing: 12
 
-                                    Rectangle {
-                                        id: exploreCard
-                                        required property var modelData
-                                        required property int index
+                                    Repeater {
+                                        model: root.galleryModel.exploreItems
 
-                                        width: Math.floor((exploreFlow.width - 24) / 3)
-                                        height: Math.round(width * 9 / 16)
-                                        radius: 8
-                                        color: root.colSurfaceRaised
-                                        border.color: exploreHover.containsMouse ? root.colPacingCyan : root.colBorderSubtle
-                                        border.width: 1
-                                        clip: true
-
-                                        Image {
-                                            anchors.fill: parent
-                                            source: exploreCard.modelData.thumb || ""
-                                            fillMode: Image.PreserveAspectCrop
-                                            asynchronous: true
-                                        }
-
-                                        // Dark gradient
                                         Rectangle {
-                                            anchors.fill: parent
-                                            gradient: Gradient {
-                                                GradientStop { position: 0.5; color: "transparent" }
-                                                GradientStop { position: 1.0; color: Qt.rgba(17/255, 19/255, 23/255, 0.9) }
+                                            id: exploreCard
+                                            required property var modelData
+                                            required property int index
+
+                                            readonly property string installedId: root.galleryModel.installedLocalId(exploreCard.modelData.ref)
+                                            readonly property bool isInstalled: installedId !== ""
+                                            readonly property bool isDownloading: root.galleryModel.downloadingRef === exploreCard.modelData.ref
+
+                                            width: Math.floor((exploreFlow.width - 24) / 3)
+                                            height: Math.round(width * 9 / 16)
+                                            radius: 8
+                                            color: root.colSurfaceRaised
+                                            border.color: exploreHover.containsMouse ? root.colPacingCyan : root.colBorderSubtle
+                                            border.width: 1
+                                            clip: true
+
+                                            Image {
+                                                anchors.fill: parent
+                                                source: exploreCard.modelData.thumb || ""
+                                                fillMode: Image.PreserveAspectCrop
+                                                asynchronous: true
                                             }
-                                        }
 
-                                        // Title & install button
-                                        ColumnLayout {
-                                            anchors.left: parent.left
-                                            anchors.right: parent.right
-                                            anchors.bottom: parent.bottom
-                                            anchors.margins: 8
-                                            spacing: 4
-
-                                            Text {
-                                                text: exploreCard.modelData.title || exploreCard.modelData.ref || ""
-                                                font.pixelSize: 11
-                                                font.weight: Font.Bold
-                                                color: root.colTextPrimary
-                                                elide: Text.ElideRight
-                                                Layout.fillWidth: true
-                                            }
-
+                                            // Dark gradient
                                             Rectangle {
-                                                Layout.fillWidth: true
-                                                implicitHeight: 22
-                                                radius: 4
-                                                color: root.colPacingCyan
+                                                anchors.fill: parent
+                                                gradient: Gradient {
+                                                    GradientStop { position: 0.3; color: "transparent" }
+                                                    GradientStop { position: 1.0; color: Qt.rgba(17/255, 19/255, 23/255, 0.92) }
+                                                }
+                                            }
+
+                                            // Top badges row: Resolution & Installed status
+                                            RowLayout {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.top: parent.top
+                                                anchors.margins: 6
+
+                                                // Resolution badge (4K, HD)
+                                                Rectangle {
+                                                    visible: Boolean(exploreCard.modelData.resolution)
+                                                    implicitWidth: resText.implicitWidth + 8
+                                                    implicitHeight: 18
+                                                    radius: 4
+                                                    color: exploreCard.modelData.resolution === "4K" ? Qt.rgba(245/255, 158/255, 11/255, 0.3) : Qt.rgba(56/255, 189/255, 248/255, 0.3)
+                                                    border.color: exploreCard.modelData.resolution === "4K" ? root.colTelemetryAmber : root.colPacingCyan
+                                                    border.width: 1
+
+                                                    Text {
+                                                        id: resText
+                                                        anchors.centerIn: parent
+                                                        text: exploreCard.modelData.resolution || ""
+                                                        font.pixelSize: 9
+                                                        font.family: "JetBrains Mono, monospace"
+                                                        font.weight: Font.Bold
+                                                        color: exploreCard.modelData.resolution === "4K" ? root.colTelemetryAmber : root.colPacingCyan
+                                                    }
+                                                }
+
+                                                Item { Layout.fillWidth: true }
+
+                                                // Installed badge
+                                                Rectangle {
+                                                    visible: exploreCard.isInstalled
+                                                    implicitWidth: 62
+                                                    implicitHeight: 18
+                                                    radius: 4
+                                                    color: root.colSuccess
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "INSTALLED"
+                                                        font.pixelSize: 8
+                                                        font.family: "JetBrains Mono, monospace"
+                                                        font.weight: Font.Bold
+                                                        color: "#111317"
+                                                    }
+                                                }
+                                            }
+
+                                            // Title, slug & install button
+                                            ColumnLayout {
+                                                anchors.left: parent.left
+                                                anchors.right: parent.right
+                                                anchors.bottom: parent.bottom
+                                                anchors.margins: 8
+                                                spacing: 4
 
                                                 Text {
-                                                    anchors.centerIn: parent
-                                                    text: "Download / Apply"
-                                                    font.pixelSize: 10
+                                                    text: exploreCard.modelData.title || exploreCard.modelData.slug || exploreCard.modelData.ref || ""
+                                                    font.pixelSize: 11
                                                     font.weight: Font.Bold
-                                                    color: "#111317"
+                                                    color: root.colTextPrimary
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
                                                 }
 
-                                                MouseArea {
-                                                    anchors.fill: parent
-                                                    cursorShape: Qt.PointingHandCursor
-                                                    onClicked: root.galleryModel.installOrApply(exploreCard.modelData)
+                                                Text {
+                                                    visible: Boolean(exploreCard.modelData.slug)
+                                                    text: exploreCard.modelData.slug || ""
+                                                    font.pixelSize: 9
+                                                    font.family: "JetBrains Mono, monospace"
+                                                    color: root.colTextDim
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+
+                                                Rectangle {
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 22
+                                                    radius: 4
+                                                    color: {
+                                                        if (exploreCard.isDownloading) return Qt.rgba(245/255, 158/255, 11/255, 0.25);
+                                                        if (exploreCard.isInstalled) return Qt.rgba(16/255, 185/255, 129/255, 0.25);
+                                                        return installBtnHover.containsMouse ? root.colPacingCyan : Qt.rgba(56/255, 189/255, 248/255, 0.2);
+                                                    }
+                                                    border.color: {
+                                                        if (exploreCard.isDownloading) return root.colTelemetryAmber;
+                                                        if (exploreCard.isInstalled) return root.colSuccess;
+                                                        return root.colPacingCyan;
+                                                    }
+                                                    border.width: 1
+
+                                                    RowLayout {
+                                                        anchors.centerIn: parent
+                                                        spacing: 4
+
+                                                        Text {
+                                                            text: {
+                                                                if (exploreCard.isDownloading) return "⏳ Downloading...";
+                                                                if (exploreCard.isInstalled) return "▶ Apply";
+                                                                return "⬇ Download / Install";
+                                                            }
+                                                            font.pixelSize: 10
+                                                            font.weight: Font.Bold
+                                                            color: {
+                                                                if (exploreCard.isDownloading) return root.colTelemetryAmber;
+                                                                if (exploreCard.isInstalled) return root.colSuccess;
+                                                                return installBtnHover.containsMouse ? "#111317" : root.colPacingCyan;
+                                                            }
+                                                        }
+                                                    }
+
+                                                    MouseArea {
+                                                        id: installBtnHover
+                                                        anchors.fill: parent
+                                                        hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        enabled: !exploreCard.isDownloading
+                                                        onClicked: root.galleryModel.installOrApply(exploreCard.modelData)
+                                                    }
                                                 }
                                             }
+
+                                            MouseArea {
+                                                id: exploreHover
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                z: -1
+                                                onClicked: root.galleryModel.installOrApply(exploreCard.modelData)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Load More Button
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    implicitWidth: 140
+                                    implicitHeight: 30
+                                    radius: 5
+                                    color: loadMoreArea.containsMouse ? root.colSurfaceRaised : root.colSurface
+                                    border.color: root.colPacingCyan
+                                    border.width: 1
+                                    visible: root.galleryModel.exploreItems.length > 0 && !root.galleryModel.exploreLoading
+
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Text { text: "⬇"; font.pixelSize: 11; color: root.colPacingCyan }
+                                        Text {
+                                            text: "Load More (p. " + (root.galleryModel.explorePage + 1) + ")"
+                                            font.pixelSize: 11
+                                            font.weight: Font.DemiBold
+                                            color: root.colPacingCyan
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: loadMoreArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: root.galleryModel.exploreMore()
+                                    }
+                                }
+
+                                // Searching indicator
+                                Rectangle {
+                                    Layout.alignment: Qt.AlignHCenter
+                                    implicitWidth: 160
+                                    implicitHeight: 30
+                                    radius: 5
+                                    color: root.colSurface
+                                    border.color: root.colBorderSubtle
+                                    border.width: 1
+                                    visible: root.galleryModel.exploreLoading
+
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        Text { text: "⏳"; font.pixelSize: 12 }
+                                        Text {
+                                            text: "Searching online..."
+                                            font.pixelSize: 11
+                                            color: root.colTextMuted
+                                        }
+                                    }
+                                }
+
+                                // Error indicator with retry
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    implicitHeight: 40
+                                    radius: 6
+                                    color: Qt.rgba(239/255, 68/255, 68/255, 0.1)
+                                    border.color: Qt.rgba(239/255, 68/255, 68/255, 0.3)
+                                    border.width: 1
+                                    visible: root.galleryModel.exploreError !== "" && !root.galleryModel.exploreLoading
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.margins: 8
+                                        spacing: 8
+
+                                        Text {
+                                            text: "⚠️ " + root.galleryModel.exploreError
+                                            font.pixelSize: 11
+                                            color: root.colDanger
+                                            Layout.fillWidth: true
                                         }
 
-                                        MouseArea {
-                                            id: exploreHover
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            z: -1
-                                            onClicked: root.galleryModel.installOrApply(exploreCard.modelData)
+                                        Rectangle {
+                                            implicitWidth: 64
+                                            implicitHeight: 24
+                                            radius: 4
+                                            color: root.colSurfaceRaised
+                                            border.color: root.colBorderSubtle
+                                            border.width: 1
+
+                                            Text {
+                                                anchors.centerIn: parent
+                                                text: "Retry"
+                                                font.pixelSize: 10
+                                                color: root.colTextPrimary
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: root.galleryModel.explore()
+                                            }
                                         }
                                     }
                                 }

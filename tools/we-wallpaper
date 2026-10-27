@@ -1538,7 +1538,10 @@ if n == 0:
 # thumb y título. Nunca toca wallpapers reales del workshop sin --force.
 remove_item() {
     local id="${1:-}" force="${2:-}"
-    [ -n "$id" ] || { echo "Uso: we-wallpaper remove <id> [--force]"; return 1; }
+    if [[ "$id" != motionbgs-* && "$id" != desktophut-* && "$id" != bing-* && "$id" != fetch-* && "$id" != import-* && "$id" != img-* ]]; then
+	echo "Los fondos de Wallpaper Engine deben gestionarse y eliminarse desde Steam / Wallpaper Engine."
+	return 1
+    fi
     local dir="" target=""
     if [[ "$id" == img-* ]]; then
 	local lab="$HOME/Pictures/backgrounds-lab" stem="${id#img-}" e
@@ -1549,11 +1552,6 @@ remove_item() {
     else
 	dir="$WE_DIR/$id"
 	[ -d "$dir" ] || { echo "No existe: $id"; return 1; }
-	if [[ "$id" != motionbgs-* && "$id" != desktophut-* && "$id" != bing-* && "$id" != fetch-* ]] \
-	    && [ "$force" != "--force" ]; then
-	    echo "'$id' no parece del store (usa --force si sabes lo que haces)"
-	    return 1
-	fi
     fi
 
     if [ -n "$dir" ]; then
@@ -1882,10 +1880,12 @@ for it in cache.get('items', []):
                     pp = cand
                     break
         tp = pp if pp and os.path.isfile(pp) else ''
+    tid_source = 'store' if tid.startswith(('motionbgs-', 'desktophut-', 'bing-', 'fetch-', 'import-')) else ('local' if tid.startswith('img-') else 'wallpaperengine')
     items.append({
         'id': tid,
         'title': titles.get(tid) or it.get('title') or tid,
         'type': it.get('type', 'unknown'),
+        'source': tid_source,
         'valid': bool(it.get('valid', True)),
         'missing': bool(it.get('missing', False)),
         'favorite': bool(it.get('favorite', False)),
@@ -1905,6 +1905,7 @@ if os.path.isdir(lab):
                 'id': 'img-' + stem,
                 'title': titles.get('img-' + stem) or titles.get(stem) or stem.replace('_', ' '),
                 'type': 'image',
+                'source': 'local',
                 'valid': True,
                 'favorite': False,
                 'description': 'static image (feh)',
@@ -2346,7 +2347,15 @@ EOF
     fetch)      fetch_url "$2" "$3" ;;
     catalog)    catalog "$2" "$3" "$4" ;;
     catalog-get) catalog_get "$2" "$3" "$4" ;;
-    remove)      remove_item "$2" "$3" ;;
+    remove|delete) remove_item "$2" "$3" ;;
+    desktophut)
+	case "${2:-}" in
+	    search) catalog desktophut "$3" "$4" ;;
+	    download) catalog_get "desktophut:$3" "" "$4" ;;
+	    delete) remove_item "desktophut-$3" "$4" ;;
+	    *) echo "Uso: we-wallpaper desktophut <search|download|delete> [args]" ;;
+	esac
+	;;
     import)     import_video "$2" "$3" "$4" "$5" ;;
     switch)     switch_wallpaper "$2" ;;
     grid)       grid "$2" ;;

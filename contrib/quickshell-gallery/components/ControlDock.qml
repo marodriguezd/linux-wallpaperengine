@@ -41,6 +41,7 @@ Rectangle {
     property color colTextMuted: "#94A3B8"
     property color colTextDim: "#64748B"
     property color colSuccess: "#10B981"
+    property color colDanger: "#EF4444"
 
     signal collapseToggled()
 
@@ -669,6 +670,153 @@ Rectangle {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.galleryModel.resetProps()
+                    }
+                }
+
+                // Wallpaper Actions & Delete Section
+                Text {
+                    text: "WALLPAPER ACTIONS"
+                    font.pixelSize: 10
+                    font.family: "JetBrains Mono, monospace"
+                    font.weight: Font.Bold
+                    color: root.colTextDim
+                    visible: root.galleryModel.selectedId !== ""
+                }
+
+                Rectangle {
+                    id: dockManageBox
+                    Layout.fillWidth: true
+                    implicitHeight: manageCol.implicitHeight + 16
+                    radius: 6
+                    color: root.colBaseVoid
+                    border.color: root.colBorderSubtle
+                    border.width: 1
+                    visible: root.galleryModel.selectedId !== ""
+
+                    readonly property var currentWp: root.galleryModel.selectedItem()
+                    readonly property bool isWPE: root.galleryModel.isWallpaperEngine(currentWp)
+
+                    ColumnLayout {
+                        id: manageCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: 8
+                        spacing: 8
+
+                        // Protection Notice Banner for Wallpaper Engine
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: wpeCol.implicitHeight + 12
+                            radius: 5
+                            color: Qt.rgba(245/255, 158/255, 11/255, 0.12)
+                            border.color: Qt.rgba(245/255, 158/255, 11/255, 0.35)
+                            border.width: 1
+                            visible: dockManageBox.isWPE
+
+                            ColumnLayout {
+                                id: wpeCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: 8
+                                spacing: 4
+
+                                RowLayout {
+                                    spacing: 6
+                                    Text {
+                                        text: "🔒"
+                                        font.pixelSize: 11
+                                    }
+                                    Text {
+                                        text: "Wallpaper Engine Protegido"
+                                        font.pixelSize: 10
+                                        font.weight: Font.Bold
+                                        color: root.colTelemetryAmber
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Los fondos de Wallpaper Engine deben gestionarse y eliminarse desde Steam / Wallpaper Engine."
+                                    font.pixelSize: 9
+                                    color: root.colTextMuted
+                                    wrapMode: Text.WordWrap
+                                }
+                            }
+                        }
+
+                        // Delete button
+                        Rectangle {
+                            id: dockDeleteBtn
+                            Layout.fillWidth: true
+                            implicitHeight: 28
+                            radius: 4
+                            property bool confirming: false
+
+                            Timer {
+                                id: dockConfirmTimer
+                                interval: 4000
+                                running: false
+                                repeat: false
+                                onTriggered: dockDeleteBtn.confirming = false
+                            }
+
+                            color: {
+                                if (dockManageBox.isWPE) return Qt.rgba(45/255, 52/255, 64/255, 0.3);
+                                if (dockDeleteBtn.confirming) return root.colDanger;
+                                return dockDelArea.containsMouse ? Qt.rgba(239/255, 68/255, 68/255, 0.2) : root.colSurfaceRaised;
+                            }
+                            border.color: {
+                                if (dockManageBox.isWPE) return root.colBorderSubtle;
+                                if (dockDeleteBtn.confirming) return root.colDanger;
+                                return dockDelArea.containsMouse ? root.colDanger : root.colBorderSubtle;
+                            }
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.centerIn: parent
+                                spacing: 6
+
+                                Text {
+                                    text: dockManageBox.isWPE ? "🔒" : "🗑"
+                                    font.pixelSize: 11
+                                    color: dockManageBox.isWPE ? root.colTextDim : (dockDeleteBtn.confirming ? "#FFFFFF" : root.colTextPrimary)
+                                }
+
+                                Text {
+                                    text: {
+                                        if (dockManageBox.isWPE) return "Eliminación bloqueada (Steam)";
+                                        if (dockDeleteBtn.confirming) return "Confirmar eliminación definitiva";
+                                        return "Eliminar fondo de pantalla";
+                                    }
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    color: dockManageBox.isWPE ? root.colTextDim : (dockDeleteBtn.confirming ? "#FFFFFF" : (dockDelArea.containsMouse ? root.colDanger : root.colTextPrimary))
+                                }
+                            }
+
+                            MouseArea {
+                                id: dockDelArea
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: dockManageBox.isWPE ? Qt.ForbiddenCursor : Qt.PointingHandCursor
+                                onClicked: {
+                                    if (dockManageBox.isWPE) {
+                                        root.galleryModel.showNotice("Los fondos de Wallpaper Engine deben gestionarse y eliminarse desde Steam / Wallpaper Engine.", "blocked");
+                                        return;
+                                    }
+                                    if (!dockDeleteBtn.confirming) {
+                                        dockDeleteBtn.confirming = true;
+                                        dockConfirmTimer.restart();
+                                    } else {
+                                        dockDeleteBtn.confirming = false;
+                                        dockConfirmTimer.stop();
+                                        root.galleryModel.confirmDelete(dockManageBox.currentWp);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

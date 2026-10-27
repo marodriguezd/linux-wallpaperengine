@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "we/app/engine.hpp"
+#include "we/desktophut/client.hpp"
+#include "we/desktophut/repository.hpp"
 #include "we/display/display.hpp"
 #include "we/power/battery.hpp"
 #include "we/presets/presets.hpp"
@@ -29,6 +31,7 @@
 namespace {
 
 namespace app = we::app;
+namespace desktophut = we::desktophut;
 namespace presets = we::presets;
 namespace display = we::display;
 namespace gfx = we::gfx;
@@ -50,8 +53,13 @@ void print_usage () {
 	"{0} {1} - Wallpaper Engine engine tooling\n"
 	"\n"
 	"Usage:\n"
-	"  {0} run PATH|WORKSHOP_ID [options]\n"
+	"  {0} run PATH|WORKSHOP_ID|SLUG [options]\n"
 	"  {0} list [--json]\n"
+	"  {0} delete PATH|ID\n"
+	"  {0} desktophut search [--category CAT] [--page N] [--json] [QUERY]\n"
+	"  {0} desktophut download [--id ID] SLUG_OR_URL\n"
+	"  {0} desktophut list [--json]\n"
+	"  {0} desktophut delete ID\n"
 	"  {0} steam [--json] [--home DIR] [--library DIR]... [--no-mounts] [--no-proton]\n"
 	"  {0} doctor\n"
 	"  {0} vfs --root DIR [--root DIR]... [--list] [--cat] PATH\n"
@@ -59,12 +67,14 @@ void print_usage () {
 	"  {0} --version\n"
 	"\n"
 	"Commands:\n"
-	"  run     Play a wallpaper directory, scene.pkg or Steam workshop id.\n"
-	"  list    List Wallpaper Engine projects found in the Steam workshop.\n"
-	"  steam   Discover Steam libraries and Wallpaper Engine installations.\n"
-	"  doctor  Report display, OpenGL, battery and Steam status.\n"
-	"  vfs     Resolve a Wallpaper Engine path against one or more roots.\n"
-	"  pkg     Inspect or extract a scene.pkg archive without writing it to disk.\n"
+	"  run         Play a wallpaper directory, scene.pkg or Steam workshop id.\n"
+	"  list        List Wallpaper Engine projects found in Steam workshop and local library.\n"
+	"  delete      Delete a local wallpaper from disk (Steam items protected).\n"
+	"  desktophut  Search, download, list, and delete DesktopHut live wallpapers.\n"
+	"  steam       Discover Steam libraries and Wallpaper Engine installations.\n"
+	"  doctor      Report display, OpenGL, battery and Steam status.\n"
+	"  vfs         Resolve a Wallpaper Engine path against one or more roots.\n"
+	"  pkg         Inspect or extract a scene.pkg archive without writing it to disk.\n"
 	"\n"
 	"run options:\n"
 	"  --backend auto|x11-desktop|x11-root|wayland|headless\n"
@@ -478,29 +488,10 @@ int command_pkg (std::span<const std::string_view> arguments) {
 	return std::nullopt;
     }
 
-    const std::filesystem::path direct_path (value);
-    std::error_code error;
-
-    if (std::filesystem::exists (direct_path, error)) {
-	return direct_path;
-    }
-
     const SteamLocator locator (SteamDiscoveryOptions {});
     const SteamDiscovery discovery = locator.discover ();
 
-    for (const auto& library : discovery.libraries) {
-	if (library.workshop_content_dir.empty ()) {
-	    continue;
-	}
-
-	const auto candidate = library.workshop_content_dir / std::string (value);
-
-	if (std::filesystem::is_directory (candidate, error) || std::filesystem::is_regular_file (candidate, error)) {
-	    return candidate;
-	}
-    }
-
-    return std::nullopt;
+    return desktophut::resolve_wallpaper (value, discovery);
 }
 
 int command_run (std::span<const std::string_view> arguments) {
@@ -747,54 +738,7 @@ int command_list (std::span<const std::string_view> arguments) {
     const SteamLocator locator (SteamDiscoveryOptions {});
     const SteamDiscovery discovery = locator.discover ();
 
-    struct Item {
-	std::string id;
-	std::string title;
-	std::string type;
-	std::string file;
-	std::string path;
-	std::string preview;
-    };
-
-    std::vector<Item> items;
-
-    for (const auto& library : discovery.libraries) {
-	std::error_code error;
-
-	if (library.workshop_content_dir.empty ()
-	    || !std::filesystem::is_directory (library.workshop_content_dir, error)) {
-	    continue;
-	}
-
-	for (const auto& entry : std::filesystem::directory_iterator (library.workshop_content_dir, error)) {
-	    if (!entry.is_directory ()) {
-		continue;
-	    }
-
-	    auto assets = scene::AssetContainer::open (entry.path ());
-
-	    if (!assets) {
-		continue;
-	    }
-
-	    auto project = scene::load_project (*assets);
-
-	    if (!project) {
-		continue;
-	    }
-
-	    items.push_back (
-		Item { .id = entry.path ().filename ().string (),
-		       .title = project->title,
-		       .type = std::string (scene::to_string (project->type)),
-		       .file = project->file,
-		       .path = entry.path ().string (),
-		       .preview = project->preview }
-	    );
-	}
-    }
-
-    std::ranges::sort (items, [] (const Item& left, const Item& right) { return left.title < right.title; });
+    const auto items = desktophut::list_all_wallpapers (discovery);
 
     if (json) {
 	std::string output = "[\n";
@@ -803,7 +747,8 @@ int command_list (std::span<const std::string_view> arguments) {
 	    output += "  {\"id\": \"" + json_escape (items[index].id) + "\", \"title\": \""
 		+ json_escape (items[index].title) + "\", \"type\": \"" + json_escape (items[index].type)
 		+ "\", \"file\": \"" + json_escape (items[index].file) + "\", \"path\": \""
-		+ json_escape (items[index].path) + "\", \"preview\": \"" + json_escape (items[index].preview) + "\"}";
+		+ json_escape (items[index].path) + "\", \"preview\": \"" + json_escape (items[index].preview)
+		+ "\", \"source\": \"" + json_escape (items[index].source) + "\"}";
 	    output += index + 1 == items.size () ? "\n" : ",\n";
 	}
 
@@ -813,11 +758,335 @@ int command_list (std::span<const std::string_view> arguments) {
     }
 
     for (const auto& item : items) {
-	std::print ("{:>12}  {:<8}  {}\n", item.id, item.type, item.title);
+	std::print ("{:>16}  {:<8}  {:<16}  {}\n", item.id, item.type, item.source, item.title);
     }
 
     std::print ("\n{} wallpaper(s)\n", items.size ());
     return 0;
+}
+
+int command_delete (std::span<const std::string_view> arguments) {
+    std::optional<std::string_view> target;
+
+    for (const auto argument : arguments) {
+	if (argument == "--help" || argument == "-h") {
+	    std::print (
+		stderr,
+		"Usage:\n"
+		"  {0} delete ID_OR_PATH\n"
+		"\n"
+		"Deletes a local wallpaper from disk.\n"
+		"Wallpapers from Wallpaper Engine / Steam cannot be deleted with this command.\n",
+		program_name
+	    );
+	    return 0;
+	} else if (argument.starts_with ("--")) {
+	    print_error (std::format ("unknown option '{}'", argument));
+	    return 2;
+	} else if (target.has_value ()) {
+	    print_error ("only one wallpaper may be deleted at a time");
+	    return 2;
+	} else {
+	    target = argument;
+	}
+    }
+
+    if (!target.has_value ()) {
+	print_error ("missing ID or PATH");
+	return 2;
+    }
+
+    const SteamLocator locator (SteamDiscoveryOptions {});
+    const SteamDiscovery discovery = locator.discover ();
+
+    const auto result = desktophut::delete_wallpaper (*target, discovery);
+    if (!result) {
+	if (result.error ().message == desktophut::steam_deletion_refusal_message) {
+	    std::print (stderr, "{}\n", desktophut::steam_deletion_refusal_message);
+	} else {
+	    print_error (result.error ().message);
+	}
+	return 1;
+    }
+
+    std::print ("Deleted wallpaper '{}'\n", *target);
+    return 0;
+}
+
+int command_desktophut_search (std::span<const std::string_view> arguments) {
+    desktophut::SearchOptions options;
+    bool json = false;
+    std::vector<std::string_view> query_parts;
+    long long number = 0;
+
+    for (std::size_t index = 0; index < arguments.size (); ++index) {
+	const std::string_view argument = arguments[index];
+
+	if (argument == "--json") {
+	    json = true;
+	} else if (argument == "--category") {
+	    if (index + 1 >= arguments.size ()) {
+		print_error ("--category requires a value");
+		return 2;
+	    }
+	    options.category = std::string (arguments[++index]);
+	} else if (argument == "--page") {
+	    if (index + 1 >= arguments.size () || !parse_integer (arguments[index + 1], number) || number < 1) {
+		print_error ("--page expects a positive number");
+		return 2;
+	    }
+	    options.page = static_cast<int> (number);
+	    ++index;
+	} else if (argument == "--help" || argument == "-h") {
+	    std::print (
+		stderr,
+		"Usage:\n"
+		"  {0} desktophut search [--category CAT] [--page N] [--json] [QUERY]\n",
+		program_name
+	    );
+	    return 0;
+	} else if (argument.starts_with ("--")) {
+	    print_error (std::format ("unknown option '{}'", argument));
+	    return 2;
+	} else {
+	    query_parts.push_back (argument);
+	}
+    }
+
+    if (!query_parts.empty ()) {
+	std::string full_query;
+	for (std::size_t i = 0; i < query_parts.size (); ++i) {
+	    if (i > 0) {
+		full_query += ' ';
+	    }
+	    full_query += query_parts[i];
+	}
+	options.query = std::move (full_query);
+    }
+
+    desktophut::DesktopHutClient client;
+    const auto results = client.search (options);
+    if (!results) {
+	print_error (results.error ().message);
+	return 1;
+    }
+
+    if (json) {
+	std::string output = "[\n";
+	for (std::size_t i = 0; i < results->size (); ++i) {
+	    const auto& card = (*results)[i];
+	    output += "  {\"id\": \"" + json_escape (card.id) + "\", \"title\": \"" + json_escape (card.title)
+		+ "\", \"resolution\": \"" + json_escape (card.resolution) + "\", \"thumbnail_url\": \""
+		+ json_escape (card.thumbnail_url) + "\", \"preview_video_url\": \""
+		+ json_escape (card.preview_video_url) + "\", \"url\": \"" + json_escape (card.page_url) + "\"}";
+	    output += i + 1 == results->size () ? "\n" : ",\n";
+	}
+	output += "]\n";
+	std::print ("{}", output);
+	return 0;
+    }
+
+    std::print ("DesktopHut wallpapers ({}):\n", results->size ());
+    for (const auto& card : *results) {
+	std::print ("  {:<36}  [{:<9}]  {}\n", card.id, card.resolution, card.title);
+    }
+
+    if (!results->empty ()) {
+	std::print ("\nDownload with: {0} desktophut download <id>\n", program_name);
+    }
+
+    return 0;
+}
+
+int command_desktophut_download (std::span<const std::string_view> arguments) {
+    std::optional<std::string_view> target;
+    std::optional<std::string_view> custom_id;
+
+    for (std::size_t index = 0; index < arguments.size (); ++index) {
+	const std::string_view argument = arguments[index];
+
+	if (argument == "--id") {
+	    if (index + 1 >= arguments.size ()) {
+		print_error ("--id requires a value");
+		return 2;
+	    }
+	    custom_id = arguments[++index];
+	} else if (argument == "--help" || argument == "-h") {
+	    std::print (
+		stderr,
+		"Usage:\n"
+		"  {0} desktophut download [--id ID] SLUG_OR_URL\n",
+		program_name
+	    );
+	    return 0;
+	} else if (argument.starts_with ("--")) {
+	    print_error (std::format ("unknown option '{}'", argument));
+	    return 2;
+	} else if (target.has_value ()) {
+	    print_error ("only one wallpaper may be downloaded at a time");
+	    return 2;
+	} else {
+	    target = argument;
+	}
+    }
+
+    if (!target.has_value ()) {
+	print_error ("missing SLUG or URL");
+	return 2;
+    }
+
+    desktophut::DesktopHutClient client;
+    const auto result = client.download_wallpaper (*target, custom_id);
+    if (!result) {
+	print_error (result.error ().message);
+	return 1;
+    }
+
+    const std::string slug = custom_id.has_value () ? std::string (*custom_id) : desktophut::extract_slug (*target);
+
+    std::print ("Downloaded and installed wallpaper to {}\n", result->string ());
+    std::print ("Run with: {0} run desktophut-{1}\n", program_name, slug);
+    return 0;
+}
+
+int command_desktophut_list (std::span<const std::string_view> arguments) {
+    bool json = false;
+
+    for (const auto argument : arguments) {
+	if (argument == "--json") {
+	    json = true;
+	} else if (argument == "--help" || argument == "-h") {
+	    std::print (
+		stderr,
+		"Usage:\n"
+		"  {0} desktophut list [--json]\n",
+		program_name
+	    );
+	    return 0;
+	} else {
+	    print_error (std::format ("unknown option '{}'", argument));
+	    return 2;
+	}
+    }
+
+    const auto items = desktophut::list_desktophut_wallpapers ();
+
+    if (json) {
+	std::string output = "[\n";
+	for (std::size_t index = 0; index < items.size (); ++index) {
+	    output += "  {\"id\": \"" + json_escape (items[index].id) + "\", \"title\": \""
+		+ json_escape (items[index].title) + "\", \"type\": \"" + json_escape (items[index].type)
+		+ "\", \"file\": \"" + json_escape (items[index].file) + "\", \"path\": \""
+		+ json_escape (items[index].path) + "\", \"preview\": \"" + json_escape (items[index].preview)
+		+ "\", \"source\": \"desktophut\"}";
+	    output += index + 1 == items.size () ? "\n" : ",\n";
+	}
+	output += "]\n";
+	std::print ("{}", output);
+	return 0;
+    }
+
+    for (const auto& item : items) {
+	std::print ("{:>16}  {:<8}  {}\n", item.id, item.type, item.title);
+    }
+
+    std::print ("\n{} DesktopHut wallpaper(s)\n", items.size ());
+    return 0;
+}
+
+int command_desktophut_delete (std::span<const std::string_view> arguments) {
+    std::optional<std::string_view> id;
+
+    for (const auto argument : arguments) {
+	if (argument == "--help" || argument == "-h") {
+	    std::print (
+		stderr,
+		"Usage:\n"
+		"  {0} desktophut delete ID\n",
+		program_name
+	    );
+	    return 0;
+	} else if (argument.starts_with ("--")) {
+	    print_error (std::format ("unknown option '{}'", argument));
+	    return 2;
+	} else if (id.has_value ()) {
+	    print_error ("only one wallpaper may be deleted at a time");
+	    return 2;
+	} else {
+	    id = argument;
+	}
+    }
+
+    if (!id.has_value ()) {
+	print_error ("missing ID");
+	return 2;
+    }
+
+    const SteamLocator locator (SteamDiscoveryOptions {});
+    const SteamDiscovery discovery = locator.discover ();
+
+    const auto result = desktophut::delete_desktophut_wallpaper (*id, discovery);
+    if (!result) {
+	if (result.error ().message == desktophut::steam_deletion_refusal_message) {
+	    std::print (stderr, "{}\n", desktophut::steam_deletion_refusal_message);
+	} else {
+	    print_error (result.error ().message);
+	}
+	return 1;
+    }
+
+    std::print ("Deleted DesktopHut wallpaper '{}'\n", *id);
+    return 0;
+}
+
+int command_desktophut (std::span<const std::string_view> arguments) {
+    if (arguments.empty ()) {
+	std::print (
+	    stderr,
+	    "Usage:\n"
+	    "  {0} desktophut search [--category CAT] [--page N] [--json] [QUERY]\n"
+	    "  {0} desktophut download [--id ID] SLUG_OR_URL\n"
+	    "  {0} desktophut list [--json]\n"
+	    "  {0} desktophut delete ID\n",
+	    program_name
+	);
+	return 2;
+    }
+
+    const std::string_view subcommand = arguments.front ();
+    const auto rest = arguments.subspan (1);
+
+    if (subcommand == "search") {
+	return command_desktophut_search (rest);
+    }
+
+    if (subcommand == "download") {
+	return command_desktophut_download (rest);
+    }
+
+    if (subcommand == "list") {
+	return command_desktophut_list (rest);
+    }
+
+    if (subcommand == "delete") {
+	return command_desktophut_delete (rest);
+    }
+
+    if (subcommand == "--help" || subcommand == "-h" || subcommand == "help") {
+	std::print (
+	    stderr,
+	    "Usage:\n"
+	    "  {0} desktophut search [--category CAT] [--page N] [--json] [QUERY]\n"
+	    "  {0} desktophut download [--id ID] SLUG_OR_URL\n"
+	    "  {0} desktophut list [--json]\n"
+	    "  {0} desktophut delete ID\n",
+	    program_name
+	);
+	return 0;
+    }
+
+    print_error (std::format ("unknown desktophut subcommand '{}'", subcommand));
+    return 2;
 }
 
 int command_doctor () {
@@ -903,6 +1172,14 @@ int main (int argc, char* argv[]) {
 
     if (command == "list") {
 	return command_list (rest);
+    }
+
+    if (command == "delete") {
+	return command_delete (rest);
+    }
+
+    if (command == "desktophut") {
+	return command_desktophut (rest);
     }
 
     if (command == "doctor") {

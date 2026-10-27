@@ -1,6 +1,7 @@
 add_executable(we_tests
     main.cpp
     display_tests.cpp
+    desktophut_tests.cpp
     gfx_tests.cpp
     lz4_tests.cpp
     package_archive_tests.cpp
@@ -12,7 +13,7 @@ add_executable(we_tests
     vfs_tests.cpp)
 
 we_configure_target(we_tests)
-target_link_libraries(we_tests PRIVATE we_scene we_display we_steam we_gfx we_presets we_core)
+target_link_libraries(we_tests PRIVATE we_desktophut we_scene we_display we_steam we_gfx we_presets we_core)
 target_include_directories(we_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(we_tests PRIVATE WE_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 

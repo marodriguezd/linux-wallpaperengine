@@ -31,6 +31,9 @@ Scope {
     property string downloadingRef: ""
     property string exploreQuality: "hd"
     property int explorePage: 1
+    property string noticeMessage: ""
+    property string noticeType: "info"
+    property var deleteTarget: null
     property string selectedId: ""
     property var selectedWallpaper: null
     property var props: []
@@ -291,7 +294,7 @@ Scope {
             if (src === "motionbgs" && lid.toLowerCase().indexOf("motionbgs-" + key + "-") === 0) {
                 return lid;
             }
-            if (src === "desktophut" && lid.toLowerCase() === "desktophut-" + key) {
+            if (src === "desktophut" && (lid.toLowerCase() === "desktophut-" + key || lid.toLowerCase() === key)) {
                 return lid;
             }
             if ((src === "wallhaven" || src === "minimal" || src === "bing") && (it.type || "") === "image") {
@@ -350,7 +353,7 @@ Scope {
         }
 
         root.downloadingRef = item.ref;
-        root.status = "installing " + (item.title || item.ref) + "...";
+        root.status = "Downloading " + (item.title || item.ref) + "...";
         const src = item.ref.split(":")[0];
         downloadProcess.command = ["we-wallpaper", "catalog-get", item.ref, (src === "motionbgs" ? root.exploreQuality : ""), (item.title || "")];
         downloadProcess.running = true;
@@ -609,21 +612,79 @@ Scope {
         applyProcess.running = true;
     }
 
+    function showNotice(msg : string, type : string) : void {
+        root.noticeMessage = msg;
+        root.noticeType = type || "info";
+        root.status = msg;
+        noticeTimer.restart();
+    }
+
+    function clearNotice() : void {
+        root.noticeMessage = "";
+        noticeTimer.stop();
+    }
+
+    function isWallpaperEngine(item : var) : bool {
+        if (!item || !item.id) return false;
+        if (item.source === "wallpaperengine") return true;
+        if (item.source && item.source !== "wallpaperengine") return false;
+        const id = String(item.id);
+        if (id.indexOf("desktophut-") === 0 || id.indexOf("motionbgs-") === 0 ||
+            id.indexOf("bing-") === 0 || id.indexOf("img-") === 0 ||
+            id.indexOf("fetch-") === 0 || id.indexOf("import-") === 0) {
+            return false;
+        }
+        return true;
+    }
+
     function isStoreItem(id : string) : bool {
         if (!id) {
             return false;
         }
-        return id.indexOf("motionbgs-") === 0 || id.indexOf("desktophut-") === 0 || id.indexOf("bing-") === 0 || id.indexOf("img-") === 0;
+        return id.indexOf("motionbgs-") === 0 || id.indexOf("desktophut-") === 0 || id.indexOf("bing-") === 0 || id.indexOf("img-") === 0 || id.indexOf("fetch-") === 0 || id.indexOf("import-") === 0;
     }
 
-    function remove(item : var) : void {
-        if (!item || !item.id) {
+    function requestDelete(item : var) : void {
+        if (!item || !item.id) return;
+        if (root.isWallpaperEngine(item)) {
+            root.showNotice("Los fondos de Wallpaper Engine deben gestionarse y eliminarse desde Steam / Wallpaper Engine.", "blocked");
+            return;
+        }
+        root.confirmDelete(item);
+    }
+
+    function confirmDelete(item : var) : void {
+        const target = item || root.deleteTarget;
+        if (!target || !target.id) return;
+        if (root.isWallpaperEngine(target)) {
+            root.showNotice("Los fondos de Wallpaper Engine deben gestionarse y eliminarse desde Steam / Wallpaper Engine.", "blocked");
+            root.deleteTarget = null;
             return;
         }
 
-        root.status = "deleting " + (item.title || item.id) + "...";
-        removeProcess.command = ["we-wallpaper", "remove", item.id];
+        const tid = String(target.id);
+        // Optimistically remove from items list immediately
+        const updated = [];
+        for (let i = 0; i < root.items.length; i++) {
+            if (root.items[i] && String(root.items[i].id) !== tid) {
+                updated.push(root.items[i]);
+            }
+        }
+        root.items = updated;
+
+        if (String(root.selectedId) === tid) {
+            root.selectedId = "";
+            root.selectedWallpaper = null;
+            root.props = [];
+        }
+        root.deleteTarget = null;
+        root.status = "Deleting " + (target.title || tid) + "...";
+        removeProcess.command = ["we-wallpaper", "remove", tid];
         removeProcess.running = true;
+    }
+
+    function remove(item : var) : void {
+        root.requestDelete(item);
     }
 
     function refresh() : void {
@@ -834,9 +895,16 @@ Scope {
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
-                root.status = this.text;
+                const out = this.text.trim();
+                root.status = out !== "" ? out : "Operation completed";
+                if (out.indexOf("Steam / Wallpaper Engine") !== -1) {
+                    root.showNotice("Los fondos de Wallpaper Engine deben gestionarse y eliminarse desde Steam / Wallpaper Engine.", "blocked");
+                } else if (out.indexOf("Borrado:") !== -1 || out.indexOf("Deleted") !== -1 || out.indexOf("deleted") !== -1) {
+                    root.showNotice("Fondo eliminado correctamente", "success");
+                }
                 if (root.selectedId !== "") {
                     root.selectedId = "";
+                    root.selectedWallpaper = null;
                     root.props = [];
                 }
                 refreshProcess.running = true;
@@ -1139,9 +1207,23 @@ Scope {
                         continue;
                     }
 
+                    let rawTitle = cols[1];
+                    let res = "";
+                    const m = rawTitle.match(/\[(4K|HD|2K|FHD)\]/i);
+                    if (m) {
+                        res = m[1].toUpperCase();
+                        rawTitle = rawTitle.replace(/\[(4K|HD|2K|FHD)\]/i, "").trim();
+                    }
+                    let slug = cols[0];
+                    if (slug.indexOf(":") !== -1) {
+                        slug = slug.split(":")[1];
+                    }
+
                     rows.push({
                         ref: cols[0],
-                        title: cols[1],
+                        slug: slug,
+                        title: rawTitle,
+                        resolution: res,
                         thumb: cols[2],
                         file: cols[3],
                         kind: cols[4]
@@ -1176,11 +1258,21 @@ Scope {
         stdout: StdioCollector {
             onStreamFinished: {
                 root.downloadingRef = "";
-                root.status = this.text;
+                const out = this.text.trim();
+                root.status = out !== "" ? out : "Fondo instalado";
+                root.showNotice("Fondo descargado e instalado correctamente", "success");
                 refreshProcess.running = true;
             }
         }
         stderr: StdioCollector {}
+    }
+
+    Timer {
+        id: noticeTimer
+        interval: 4500
+        running: false
+        repeat: false
+        onTriggered: root.noticeMessage = ""
     }
 
     Component.onCompleted: {

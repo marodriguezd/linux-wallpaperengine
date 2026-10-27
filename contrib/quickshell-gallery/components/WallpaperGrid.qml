@@ -22,6 +22,7 @@ Item {
     signal applyRequested(var item)
     signal favRequested(var item)
     signal inspectRequested(var item)
+    signal deleteRequested(var item)
     signal resetFiltersRequested()
 
     readonly property int colCount: Math.max(2, Math.floor(width / 240))
@@ -107,6 +108,7 @@ Item {
                     onApplyRequested: (item) => root.applyRequested(item)
                     onFavRequested: (item) => root.favRequested(item)
                     onInspectRequested: (item) => root.inspectRequested(item)
+                    onDeleteRequested: (item) => root.deleteRequested(item)
                 }
             }
         }
